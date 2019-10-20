@@ -1,0 +1,67 @@
+---
+title: "Explore xml2"
+output: html_notebook
+---
+
+Explore data from Health app.
+
+For example, see http://www.ryanpraski.com/apple-health-data-how-to-export-analyze-visualize-guide/
+
+```{r}
+library(xml2)
+x <- read_xml("apple_health_export/export.xml")
+
+nodeset <- x %>% xml2::xml_children()
+
+look <- readLines("apple_health_export/export.xml", n = 100)
+```
+
+Use xml2 based on this post:
+
+https://jeffjjohnston.github.io/rstudio/rmarkdown/2016/04/28/explore-your-apple-watch-heart-rate-data.html
+```{r}
+records <- x %>% xml_children
+
+record_types <- xml_attr(records, "type")
+
+record_types %>%
+  table(dnn="Record_type") %>%            
+  as.data.frame %>%
+  arrange(desc(Freq)) %>%
+  mutate(Count = prettyNum(Freq, big.mark=",")) %>%
+  select(-Freq) 
+
+heart_rate_records <- records[which(record_types == "HKQuantityTypeIdentifierHeartRate")]
+
+single_record_attrs <- xml_attrs(heart_rate_records[10000])[[1]]
+
+data_frame(attribute = names(single_record_attrs),
+           value     = single_record_attrs) 
+
+
+resting_heart_records <- records[which(record_types == "HKQuantityTypeIdentifierRestingHeartRate")]
+
+single_record_attrs <- xml_attrs(resting_heart_records[10])[[1]]
+
+data_frame(attribute = names(single_record_attrs),
+           value     = single_record_attrs) 
+
+resting_heart_rate_df <- data_frame(date       = as.POSIXct(xml_attr(heart_rate_records, "endDate")),
+                            resting_rate = as.integer(xml_attr(heart_rate_records, "value")))
+
+ggplot(data = resting_heart_rate_df, aes(x = date, y = resting_rate)) +
+  geom_point()
+```
+
+next we are going to look at step count based on
+https://www.r-bloggers.com/taking-steps-in-xml/
+
+```{r}
+health_data <- read_xml("apple_health_export/export.xml")
+
+steps <- xml_find_all(health_data, ".//Record[@type='HKQuantityTypeIdentifierStepCount']") %>%
+  map(xml_attrs) %>% 
+  map_df(as.list)
+glimpse(steps)
+```
+

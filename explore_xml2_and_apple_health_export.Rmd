@@ -1,0 +1,199 @@
+---
+title: "Explore xml2 and Apple Health Export"
+output: html_notebook
+---
+
+> xml_find_all(xx, ".//ExportDate")
+{xml_nodeset (1)}
+[1] <ExportDate value="2019-09-15 20:30:18 -0400"/>
+> xml_find_all(xx, ".//ExportDate") %>% class()
+[1] "xml_nodeset"
+> n1 <- xml_find_all(xx, ".//ExportDate")
+> n1 <- xml_find_first(xx, ".//ExportDate")
+> n1
+{xml_node}
+<ExportDate value="2019-09-15 20:30:18 -0400">
+> xml_path(n1)
+[1] "/HealthData/ExportDate"
+> xml_attr(n1)
+Error in node_attr(x$node, name = attr, missing = default, nsMap = ns) : 
+  argument "attr" is missing, with no default
+> xml_path(n1, "value")
+Error in xml_path(n1, "value") : unused argument ("value")
+> xml_attr(n1, "value")
+[1] "2019-09-15 20:30:18 -0400"
+
+
+```{r read_xml}
+require(xml2)
+# read_xml takes 28 seconds on my MacBook Pro (and 29 seconds on first run on iMac!)
+system.time(health_xml <- read_xml("~/Downloads/apple_health_export/export.xml"))
+
+```
+
+
+
+
+```{r}
+# xml_find_first takes 22 seconds on my MacBook Pro
+system.time(n1 <- xml_find_first(health_xml, "./ExportDate"))
+export_date <- xml_attr(n1, "value")
+
+system.time(node_me <- xml_find_first(health_xml, ".//Me"))
+dob <- xml_attr(node_me, "HKCharacteristicTypeIdentifierDateOfBirth")
+
+system.time(yy <- xml_children(health_xml))  # very slow
+xml_attr(yy[[7]], "type")
+types <- unique(xml_attr(yy, "type"))  # very very slow
+
+node_cycling <- xml_find_first(yy, ".//HKQuantityTypeIdentifierDistanceCycling")
+
+```
+
+> types
+ [1] NA                                                 "HKQuantityTypeIdentifierHeight"                  
+ [3] "HKQuantityTypeIdentifierBodyMass"                 "HKQuantityTypeIdentifierHeartRate"               
+ [5] "HKQuantityTypeIdentifierBloodPressureSystolic"    "HKQuantityTypeIdentifierBloodPressureDiastolic"  
+ [7] "HKQuantityTypeIdentifierStepCount"                "HKQuantityTypeIdentifierDistanceWalkingRunning"  
+ [9] "HKQuantityTypeIdentifierBasalEnergyBurned"        "HKQuantityTypeIdentifierActiveEnergyBurned"      
+[11] "HKQuantityTypeIdentifierFlightsClimbed"           "HKQuantityTypeIdentifierDietaryFatTotal"         
+[13] "HKQuantityTypeIdentifierDietaryFatSaturated"      "HKQuantityTypeIdentifierDietaryCholesterol"      
+[15] "HKQuantityTypeIdentifierDietarySodium"            "HKQuantityTypeIdentifierDietaryCarbohydrates"    
+[17] "HKQuantityTypeIdentifierDietaryFiber"             "HKQuantityTypeIdentifierDietarySugar"            
+[19] "HKQuantityTypeIdentifierDietaryEnergyConsumed"    "HKQuantityTypeIdentifierDietaryProtein"          
+[21] "HKQuantityTypeIdentifierNumberOfTimesFallen"      "HKQuantityTypeIdentifierAppleExerciseTime"       
+[23] "HKQuantityTypeIdentifierDietaryCaffeine"          "HKQuantityTypeIdentifierDistanceCycling"         
+[25] "HKQuantityTypeIdentifierRestingHeartRate"         "HKQuantityTypeIdentifierVO2Max"                  
+[27] "HKQuantityTypeIdentifierWalkingHeartRateAverage"  "HKCategoryTypeIdentifierSleepAnalysis"           
+[29] "HKCategoryTypeIdentifierAppleStandHour"           "HKCategoryTypeIdentifierMindfulSession"          
+[31] "HKCorrelationTypeIdentifierBloodPressure"         "HKCorrelationTypeIdentifierFood"                 
+[33] "HKQuantityTypeIdentifierHeartRateVariabilitySDNN" "Patient"                                         
+[35] "MedicationOrder"                                  "MedicationStatement"                             
+[37] "DiagnosticReport"                                 "Observation"                                     
+[39] "Condition"                                        "Procedure"                                       
+[41] "Immunization"                                     "AllergyIntolerance"
+
+    HKCategoryTypeIdentifierAppleStandHour           HKCategoryTypeIdentifierMindfulSession 
+                                           16826                                               31 
+           HKCategoryTypeIdentifierSleepAnalysis       HKQuantityTypeIdentifierActiveEnergyBurned 
+                                            2794                                          1334739 
+       HKQuantityTypeIdentifierAppleExerciseTime        HKQuantityTypeIdentifierBasalEnergyBurned 
+                                           43531                                           871744 
+  HKQuantityTypeIdentifierBloodPressureDiastolic    HKQuantityTypeIdentifierBloodPressureSystolic 
+                                            1686                                             1686 
+                HKQuantityTypeIdentifierBodyMass          HKQuantityTypeIdentifierDietaryCaffeine 
+                                             122                                                1 
+    HKQuantityTypeIdentifierDietaryCarbohydrates       HKQuantityTypeIdentifierDietaryCholesterol 
+                                               1                                             1866 
+   HKQuantityTypeIdentifierDietaryEnergyConsumed      HKQuantityTypeIdentifierDietaryFatSaturated 
+                                            2140                                             2803 
+         HKQuantityTypeIdentifierDietaryFatTotal             HKQuantityTypeIdentifierDietaryFiber 
+                                            3228                                             1977 
+          HKQuantityTypeIdentifierDietaryProtein            HKQuantityTypeIdentifierDietarySodium 
+                                            2024                                             1975 
+            HKQuantityTypeIdentifierDietarySugar          HKQuantityTypeIdentifierDistanceCycling 
+                                            1945                                             1272 
+  HKQuantityTypeIdentifierDistanceWalkingRunning           HKQuantityTypeIdentifierFlightsClimbed 
+                                          728325                                            21099 
+               HKQuantityTypeIdentifierHeartRate HKQuantityTypeIdentifierHeartRateVariabilitySDNN 
+                                          594672                                             3365 
+                  HKQuantityTypeIdentifierHeight      HKQuantityTypeIdentifierNumberOfTimesFallen 
+                                               2                                                1 
+        HKQuantityTypeIdentifierRestingHeartRate                HKQuantityTypeIdentifierStepCount 
+                                             711                                           175573 
+                  HKQuantityTypeIdentifierVO2Max  HKQuantityTypeIdentifierWalkingHeartRateAverage 
+                                              86                                              633 
+
+```{r}
+#bp1 <- xml_attrs(yy, "HKCorrelationTypeIdentifierBloodPressure")
+system.time(bp_systolic <- xml_attrs(yy, "HKQuantityTypeIdentifierBloodPressureSystolic"))
+```
+
+```{r}
+test <- yy[1:10]
+xml_find_first(test, "//Record")
+```
+
+```{r}
+# from https://rdrr.io/github/deepankardatta/AppleHealthAnalysis/src/R/ah_import_xml.r
+system.time(personal_data <- xml_find_all( health_xml , "//Me") %>% xml_attrs() %>% print())
+```
+
+```{r get_record_data}
+  # this codes taken from deepankardatta
+  # Extracts the health records, selects the 'Record' elements
+  # And then transforms into a data frame using the 'purrr' library
+  system.time(health_data <- xml2::xml_find_all( health_xml , "//Record") %>%
+    purrr::map(xml2::xml_attrs) %>%
+    purrr::map_df(as.list))
+```
+
+takes 212 seconds to use xml2 and purrr to extract Record data frame
+and df <- XML:::xmlAttrsToDataFrame(xml["//Record"]) took 169 seconds. Faster, but I guess not by
+a huge amount.
+
+View-ed yy to see structure:
+xml_attrs(yy[10000:10010][[1]]) gets the record data
+xml_child(yy[10000:10010][[1]], 1) metadata
+xml_child(yy[10000:10010][[1]], 1) attributes of the metadata
+
+```{r}
+system.time(daily_summary <- XML:::xmlAttrsToDataFrame(xml["//ActivitySummary"]) %>% as_tibble())
+```
+
+```{r}
+names.XMLNode(xml)
+```
+
+```{r get_other_stuff}
+# based on https://taraskaduk.com/2019/03/23/apple-health/
+df_activity <- XML:::xmlAttrsToDataFrame(xml["//ActivitySummary"]) %>% as_tibble()
+df_workout <-  XML:::xmlAttrsToDataFrame(xml["//Workout"], stringsAsFactors = FALSE) %>% as_tibble %>% 
+  mutate(startDate = as_datetime(str_sub(startDate, 1, 19)),
+         endDate = as_datetime(str_sub(endDate, 1, 19)),
+         creationDate = as_datetime(str_sub(creationDate, 1, 19)))
+
+  mutate(startDate = a_UTC_vector_to_clock_time(startDate))
+
+df_resting_hr <- df %>% filter(type == "HKQuantityTypeIdentifierRestingHeartRate") %>% 
+  mutate(startDate = a_UTC_vector_to_clock_time(startDate),
+         endDate = a_UTC_vector_to_clock_time(endDate),
+         startHour = hour(startDate), endHour = hour(endDate)) %>% 
+  select(sourceVersion, creationDate, startDate, endDate, value, month, year, startHour, endHour)
+dups <- df_resting_hr %>%  semi_join(df_resting_hr %>% count(endDate) %>% filter(n > 1) %>% select(endDate))
+odd <- df_resting_hr %>%  filter(startHour > 2)
+
+
+```
+
+```{r}
+df2 <- df_resting_hr %>% mutate(date = as_date(endDate))
+p <- ggplot(data = df2, aes(y = value, x = date)) +
+  geom_point()
+```
+
+let's join BP to the min hear rate
+```{r join_to_bp}
+df3 <- df2 %>% left_join(bp_group3 %>% ungroup() %>% 
+  filter(type == "systolic") %>% 
+  select(systolic = value,date), by = c("date"))
+ggplot(data = df3 %>% filter(!is.na(systolic)), aes(y = value, x = date)) +
+  geom_point() +
+  scale_x_date(date_breaks = "3 month", date_minor_breaks = "1 month") +
+  geom_smooth(span = 0.5)
+
+ggplot(data = df3 %>% filter(!is.na(systolic)), aes(y = value, x = systolic)) +
+  geom_point() + geom_smooth(span = 0.5)
+
+```
+
+```{r}
+got_xml <- read_xml(got_chars_xml())
+```
+
+```{r}
+df %>% count(type) %>% arrange(desc(n)) %>% kable()
+```
+
+
+

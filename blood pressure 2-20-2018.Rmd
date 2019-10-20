@@ -1,0 +1,166 @@
+---
+title: "Blood Pressure Notebook"
+output: html_notebook
+---
+
+
+```{r libraries}
+library("dplyr")
+library("lubridate")
+library("readr")
+library("stringr")
+library("ggplot2")
+library("tidyr")
+
+```
+
+```{r read_from_csv}
+# Based on blood pressure data in Blood Pressure.numbers in the Personal folder in Dropbox.
+# Exported to csv in the John Vitals folder.
+bp_spreadsheet <- read_csv("Blood Pressure.csv", col_types = cols(
+  date = col_date("%m/%d/%Y"),
+  time = col_character(),
+  adjusted_date = col_date("%m/%d/%Y"),
+  adjusted_time = col_character(),
+  systolic = col_double(),
+  diastolic = col_double(),
+  pulse = col_double()
+))
+bp_spreadsheet <- filter(bp_spreadsheet, !is.na(date))
+bp_spreadsheet$char_when <- ifelse(is.na(bp_spreadsheet$adjusted_date), paste(bp_spreadsheet$date, bp_spreadsheet$time), paste(bp_spreadsheet$adjusted_date, bp_spreadsheet$adjusted_time))
+bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")] <- str_replace(bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")], "12:", "00:")
+
+bp_spreadsheet$when <- parse_datetime(bp_spreadsheet$char_when, format = "%Y-%m-%d %H:%M %p")
+
+# Let's get things tidy before we do anything else.
+# gather the spreadsheet to tidy it:
+bp_manual <-  gather(bp_spreadsheet, key = type, value= value, systolic, diastolic, pulse) %>%
+  select(when, type, value, source, note) %>%
+  filter((source != "exclude") | is.na(source))
+
+bp_ds <- bind_rows(bp_manual, bp_omron)
+
+dr_young <- ymd_hms("2015-11-23 9:00:00")
+
+bp1 <- bp_ds %>%
+  group_by(type, source) %>%
+  arrange(when) %>%
+  mutate(
+    time_group =  cumsum(case_when(
+      is.na(lag(when)) ~ 1,
+      TRUE ~ as.numeric(difftime(when, lag(when), units = "mins") > 40)
+    )),
+  )
+bp1$type <- factor(bp1$type, levels = c("systolic", "diastolic", "pulse"))
+
+bp_group <- filter(bp1, is.na(source) | ((source != "vitals") & (source != "exclude"))) %>%
+  group_by(type, source, time_group) %>% 
+  summarise(value = mean(value), when = mean(when)) %>%
+  mutate(date = as_date(when))
+bp_group$type <- factor(bp_group$type, levels = c("systolic", "diastolic", "pulse"))
+
+# bp_group3 is same as bp_group except if there are multiple groups in a day it only includes the first one
+bp_group3 <- bp_group %>% 
+  group_by(type, source, date) %>%
+  arrange(time_group) %>%
+  filter(time_group == first(time_group))
+bp_group3$type <- factor(bp_group3$type, levels = c("systolic", "diastolic", "pulse"))
+  
+chart_1stperday <- ggplot(data = bp_group3,
+                          aes(x = when, y = value)) 
+chart_1stperday <- chart_1stperday + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Maximum One Group Reading per Day (Earliest)")
+chart_1stperday <- chart_1stperday + geom_vline(xintercept = as.numeric(floor_date(dr_young, unit = "day")), colour = "yellow", size = 1)
+
+# bp_group5 takes bp_group and averages grouped readings by day
+# bp_group5 <- group_by(bp_group, date) %>% arrange(date, time_group) %>% summarise(systolic = mean(systolic), diastolic = mean(diastolic), pulse = mean(pulse), when = mean(when))
+
+# 
+# bp_group2 <- gather(bp_group, type, value, systolic, diastolic, pulse)
+# 
+# bp_group_all <- filter(bp2, is.na(source) |  (source != "exclude")) %>%
+#   group_by(group) %>% summarise(systolic = mean(systolic), diastolic = mean(diastolic), pulse = mean(pulse), when = mean(when))
+# bp_group2_all <- gather(bp_group_all, type, value, systolic, diastolic, pulse)
+
+bp_ranges <- data.frame(h = c(135, 85, NA), type = c("systolic", "diastolic", "pulse"))
+events_base <- data.frame(when = c("11/23/2015 09:00 AM", "01/19/2016 09:45 AM", "01/28/2016 02:00 PM", "07/07/2017 10:00 AM",
+                                   "01/02/2018 10:00 AM"), 
+                          what = c("Young", "Mohs", "Persing", "Close", "Close"),
+                     type = "systolic")
+events_base$when <- parse_datetime(events_base$when, format = "%m/%d/%Y %H:%M %p")
+events_base$y = min(bp_group$value[bp_group$type == "systolic"])
+events_base$yend = events_base$y + 5
+events_base$type <- factor(events_base$type, levels = c( "systolic",  "diastolic", "pulse" ))
+events <- events_base
+events_base$type <- "diastolic"
+events_base$y = min(bp_group$value[bp_group$type == "diastolic"])
+events_base$yend = events_base$y + 4
+events_base$type <- factor(events_base$type, levels = c( "systolic",  "diastolic", "pulse" ))
+events <- bind_rows(events, events_base)
+events_base$type <- "pulse"
+events_base$type <- factor(events_base$type, levels = c( "systolic",  "diastolic", "pulse" ))
+events_base$y = min(bp_group$value[bp_group$type == "pulse"])
+events_base$yend = events_base$y + 4
+events <- bind_rows(events, events_base)
+events$type <- factor(events$type, levels = c("systolic", "diastolic", "pulse"))
+#bp_group$type <- factor(bp_group$type, levels = c("systolic", "diastolic", "pulse"))
+
+
+```
+
+At this point, data is setup. I hope. Now let's do some charts.
+
+```{r bp_per_day}
+
+chart_meanperday <- ggplot(data = bp_group3, aes(x = when, y = value)) 
+chart_meanperday <- chart_meanperday + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
+chart_meanperday <- chart_meanperday + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
+  xlab(NULL) + ylab(NULL) +
+  geom_smooth(data = bp_group3, span = 0.10) 
+chart_meanperday <- chart_meanperday + geom_segment(data = events, aes(x = when, xend = when, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
+chart_meanperday <- chart_meanperday + geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") 
+chart_meanperday <- chart_meanperday + scale_x_datetime(date_breaks = "3 months", date_minor_breaks = "1 months")
+chart_meanperday <- chart_meanperday + theme(axis.text.x = element_text(size = 7))
+
+ggsave("blood pressure plot.pdf", plot = chart_meanperday, width = 10, height = 7)
+
+```
+
+```{r bp_pule}
+bp_spread <- bp_group3 %>% spread(key = type, value = value)
+pulse_systolic <- ggplot(data = bp_spread, aes(x = pulse, y = systolic)) +
+  geom_point() + 
+  ggtitle("Pulse and Systolic BP") +
+  xlab("Pulse") + ylab("Systolic")  +
+  geom_smooth()
+  # geom_smooth(method = "lm")
+pulse_diastolic <- ggplot(data = bp_spread, aes(x = pulse, y = diastolic)) +
+  geom_point() + 
+  ggtitle("Pulse and Diastolic BP") +
+  xlab("Pulse") + ylab("Diastolic") +
+    geom_smooth()
+
+diastolic_systolic <- ggplot(data = bp_spread, aes(x = diastolic, y = systolic)) +
+  geom_point() + 
+  ggtitle("Diastollic and Systolic BP") +
+  xlab("Diastolic") + ylab("Systolic") +
+  geom_smooth(method = "lm")
+```
+
+
+```{r time_of_day}
+bp_group3$hour <- hour(bp_group3$when) + minute(bp_group3$when)/60
+chart_hour <- ggplot(data = bp_group3, aes(x = hour, y = value)) 
+chart_hour <- chart_hour + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
+chart_hour <- chart_hour + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
+  xlab(NULL) + ylab(NULL)+
+  geom_smooth(data = bp_group3, span = 0.10) 
+chart_hour <- chart_hour + geom_segment(data = events, aes(x = hour, xend = hour, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
+chart_hour <- chart_hour + geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") 
+
+
+```

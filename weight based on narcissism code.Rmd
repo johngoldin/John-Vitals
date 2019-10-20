@@ -1,0 +1,130 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This code for processing weight is copied from the narcisism post. 
+
+```{r from_post}
+suppressPackageStartupMessages(
+  library(tidyverse))
+# tidyverse loads these packages:
+# Loading tidyverse: ggplot2
+# Loading tidyverse: tibble
+# Loading tidyverse: tidyr
+# Loading tidyverse: readr
+# Loading tidyverse: purrr
+# Loading tidyverse: dplyr
+suppressPackageStartupMessages(library(stringr))    # for processing strings
+suppressPackageStartupMessages(library(lubridate))  # for dates
+```
+```{r getdata}
+# I was having trouble getting root.dir knitr parameter to work,
+# so I am hard coding a path to my data.
+if (str_detect(getwd(), "johngoldin")) {
+	fp <- file.path("/Users", "johngoldin", "Dropbox", "Programming",
+									"R_Stuff", "John Vitals","john weight.csv")
+} else if (str_detect(getwd(), "johng")) {
+	fp <- file.path("/Users", "johng", "Dropbox", "Programming",
+									"R_Stuff", "John Vitals","john weight.csv")
+} else {
+		fp <- file.path("/Users", "john_imac", "Dropbox", "Programming",
+										"R_Stuff", "John Vitals","john weight.csv")}
+weight_data <- read_csv(fp, col_types = cols(
+     date = col_date("%m/%d/%Y")))
+
+weight_data$month <- month(weight_data$date, label = TRUE)
+weight_data$weight <- ifelse(is.na(weight_data$adjusted), 
+														 weight_data$raw, 
+														 weight_data$adjusted)
+# in 2004 I started entering data without decimals to save time, 
+# so 1746 is 174.6 
+# Next line converts the numbers that are so large they must be four
+# digits without decimal:
+weight_data$weight <- ifelse(weight_data$weight > 250, 
+														 weight_data$weight / 10, 
+														 weight_data$weight)
+weight_data$year <- factor(year(weight_data$date)) 
+
+# get average weight by month
+weight_data$mid_month <- 
+	floor_date(weight_data$date, unit = "month") + 
+	days(14)
+wtm <- group_by(weight_data, mid_month, month) %>% 
+	summarise(weight = mean(weight, na.rm = TRUE))
+# weight by month, but without partial 1996
+wtm2 <- filter(wtm, year(mid_month) > 1996)
+```
+
+
+```{r getdata2}
+byday <- ggplot(data = weight_data, 
+								aes(x = date, y = weight)) + 
+	scale_x_date(date_breaks = "5 years", 
+							 date_minor_breaks = "1 year")
+#  put the gray regression line first so that it is underneath the 
+#  points and the other loess smoothed line.
+# byday <- byday + geom_smooth(method = "lm", se = FALSE, 
+# 														 data = wtm2, 
+# 														 aes(x = mid_month), 
+# 														 colour = "darkgray", size = 1.5)
+byday <- byday + geom_point(size = 0.5)
+# bday <- bday +	geom_smooth(data = wtm, aes(x = mid_month), span = 0.07)
+byday <- byday + 
+	ggtitle("One Individual's Daily Weight During a Twenty-one Year Span") + 
+	ylab("weight (pounds)")
+```
+
+```{r byday, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+ggsave("long term chart.pdf", plot = byday, width = 10, height = 7.5)
+```
+
+
+```{r recent}
+recent <- ggplot(data = weight_data %>% filter(year(date) >= 2018), 
+								aes(x = date, y = weight)) + 
+	scale_x_date(date_breaks = "3 months", 
+							 date_minor_breaks = "1 week")
+#  put the gray regression line first so that it is underneath the 
+#  points and the other loess smoothed line.
+# byday <- byday + geom_smooth(method = "lm", se = FALSE, 
+# 														 data = wtm2, 
+# 														 aes(x = mid_month), 
+# 														 colour = "darkgray", size = 1.5)
+recent <- recent + geom_point(size = 0.5)
+# bday <- bday +	geom_smooth(data = wtm, aes(x = mid_month), span = 0.07)
+recent <- recent + 
+	ggtitle("2018-2019") + 
+	ylab("weight (pounds)") + 
+  geom_vline(xintercept = ymd("2019-02-15"), colour = "yellow")
+ggsave("recent chart.pdf", plot = recent, width = 10, height = 7.5)
+```
+
+Check for bands:
+
+```{r bands}
+xx <- weight_data %>% 
+  filter(year(date) >= 2018) #%>% 
+   # mutate(weight2 = round(weight, 10), tenth = (weight %% 10) - round(weight))
+table(xx$tenth)
+
+seq(173.4, 150, -2.2) %>% rev()
+
+newscale <- weight_data %>% 
+  filter(date >= ymd("2017-01-01"))
+table(newscale$weight)
+newscale$date[which(newscale$weight == 169)]
+
+weight_data$date[which(weight_data$weight %in% seq(173.4, 150, -2.2))]
+
+weight_data %>% filter(year(date) > 2014) %>% 
+  filter(weight %in% seq(173.4, 150, -2.2))
+```
+
+158.2 absent    160.4 absent   161.4 absent
+
+169.0 absent    171.2 one corrected   173.4 absent
+
+1 kilogram equal 0.453592 pounds
+
+inverse is 2.204624

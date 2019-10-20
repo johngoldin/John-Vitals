@@ -1,0 +1,160 @@
+---
+title: "Summary of 2-15-2019 Event"
+author: "John Goldin"
+date: "2/19/2019"
+output: 
+  pdf_document:
+    fig_height: 4.5
+    fig_width: 6.5
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Source
+
+Heart rate data is from the Apple Watch. I have readings from 2/20/2017, almost two years, and so far 
+there are
+almost 300,000 observations. The watch seems to take a pulse reading at least every five or six minutes.
+During a workout (which I start on the watch), the frequency is much higher. It's also much more frequent
+while I am looking at the heart display on the watch (as much as one reading every five seconds or so). 
+It seems to have other ways to judge when more frequnt readings are desireable. 
+
+The Apple support information describing how it measures heart rate is here: https://support.apple.com/en-us/HT204666
+
+One can export all the data from the Apple Health app. The export is done as an XML file which
+I am able to read into R via the XML package and analyze with standard tools.
+
+```{r import_data, echo = TRUE, eval = FALSE, message = FALSE, warning = FALSE}
+xml <- xmlParse("apple_health_export/export.xml")
+df <- XML:::xmlAttrsToDataFrame(xml["//Record"])
+hr <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRate")
+```
+
+I use an Omron blood pressure cuff that has an app that moves blood pressure readings into
+the Apple Health app. The same XML export has both heart rate and blood pressure as well as
+other items such as step count, stairs climbed, exercise time, distsance walked/run, walking
+heart rate average, heart rate variability, and resting heart rate.
+
+The next plot shows the deatail of heart rate readings on the day I went to the ER. The first plot shows the period from
+midnight to 11AM. The second plot shows detail from 5AM to 7AM. The vertical green lines mark the travel
+period from our house to the Guilford ER. (The times are based on the Google Maps Timeline which shows to the minute when we
+left and when we arrived. This chart represents some serious nerdiness!) The time interval between heart readings
+varies. At about 1:30 I had a brief period of disgestive distress, which I won't describe in detail here. I went back to 
+bed and my pulse settled down quickly. There was a gradual rise from about 1:45 until 5:40 when my pulse jumped from about 80 to about 108. This may have been when I got up to pee. I went back to bed and very shortly before 5:50 my pulse started to climb rapidly up to 150. The intervals between readings are short. Was I looking at my watch then or did the watch algorithm decide to 
+take more readings because they were changing? I'm not sure. I know I did look at my watch and I saw the reading of 150.
+
+In the bottom detail plot one can see that by the time we got into the car to drive to the ER my pulse was already decreasing.
+Halfway through the car ride I did remark out loud that I was feeling a decrease in hearet rate. By the time we got into the 
+ER my pulse was already on it's way back to normal. I would guess it was between 100 and 110 by the time they took my vitals,
+but I don't know. The peak is very short duration. When I got to the ER I told them that I thought it had stayed at its high point
+for 5 or 10 minutes. My perception and recollection was incorrect.
+
+Note that there are two very anomalous data points, one at about 5:55 at about 108 BPM and another 
+at 6:04 at 75 BPM. Are these just measurement errors or do they relate to something real? I don't know. I certainly have
+observed cases where the Apple Watch produces a wacky reading, possibly because the watch is being jostled.
+
+To get a better sense of the quality of the watch heart rate data, I looked at all days where there was a reading over 145, 54 out of 503 days of watch data. (There are a total of 296,000 heart rate readings in the dataset.) The next charts show some of those days with readings over 145. Some show a high peak in the midst of a period of heavy exercise.
+(Via Google Maps Timeline sometimes I can even identify where I was hiking at the time of the reading.)
+Some are just odd points that seem to come out of the blue. I did a separate search to look for days with a reading
+over 145 when I would have been in bed. I only found three. One is the ER visit and the other two are the last two plots on the last page.
+Now I realize that the one on April 25 was while I was hiking in Greece and the plot doesn't reflect the six or seven hour time difference.
+The event on February 15 really was one of a kind even though the duration was very short.
+\pagebreak
+
+```{r setup_libs, echo = FALSE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(jsonlite)
+library(lubridate)
+library(ggplot2)
+library(XML)
+library(scales)
+library(ggpubr)
+```
+
+
+```{r mods, echo = FALSE, message = FALSE, cache = TRUE}
+xml <- xmlParse("apple_health_export/export.xml")
+df <- XML:::xmlAttrsToDataFrame(xml["//Record"])
+hr <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRate")
+#make value variable numeric
+df$value <- as.numeric(as.character(df$value))
+
+
+#make endDate in a date time variable POSIXct using lubridate with eastern time zone
+df$endDate <-ymd_hms(df$endDate,tz="America/New_York")
+df$startDate <-ymd_hms(df$startDate,tz="America/New_York")
+
+##add in year month date dayofweek hour columns
+df$month<-format(df$endDate,"%m")
+df$year<-format(df$endDate,"%Y")
+df$date<-format(df$endDate,"%Y-%m-%d")
+df$dayofweek <-wday(df$endDate, label=TRUE, abbr=FALSE)
+df$hour <-format(df$endDate,"%H")
+```
+```{r obs_per_month, echo = FALSE, eval = FALSE}
+hr <- df %>% 
+  filter(type == "HKQuantityTypeIdentifierHeartRate", startDate >= ymd("2017-10-01")) %>% 
+  mutate(ym = str_sub(date, 1, 7)) 
+p <- ggplot(data = hr, aes(x = ym)) + geom_bar()
+p <- p + ylab("Number of Observations") + xlab("Month")
+```
+
+```{r create_plot, echo = FALSE}
+plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL, pt_size = 0.3) {
+  adf <- adf %>%
+    filter(type == "HKQuantityTypeIdentifierHeartRate", date %in% adate) %>%
+    arrange(startDate)
+  if (!is.null(hour_max)) adf <- adf %>% filter(hour(startDate) <= hour_max)
+  if (!is.null(hour_min)) adf <- adf %>% filter(hour(startDate) >= hour_min)
+  p <- ggplot(data = adf, aes(x = startDate, y = value))
+  if (events) {
+    base <- adf$startDate[10]
+    left_house <- base
+    hour(left_house) <- 5
+    minute(left_house) <- 55
+    arrived <- base
+    hour(arrived) <- 6
+    minute(arrived) <- 3
+    p <- p + geom_vline(xintercept = left_house, colour = "green") +
+      geom_vline(xintercept = arrived, colour = "green")
+  }
+  p <- p + geom_point(size = pt_size) +
+    xlab("Time (Hour)") + ylab("Pulse (Apple Watch)") +
+    scale_x_datetime(date_labels = "%H", breaks = date_breaks("1 hour"),
+                     minor_breaks = date_breaks("10 min")) + 
+    facet_wrap(~ date, ncol = 1, scales = "free_x")
+}
+```
+
+```{r plot1, echo = FALSE}
+the_day <- plot_day(df, "2019-02-15", events = TRUE, hour_max = 10)
+the_day_detail <- plot_day(df, "2019-02-15", events = TRUE, hour_min = 5, hour_max = 6, pt_size = 0.7)
+# the_day2 <- ggarrange(the_day, the_day_detail, ncol = 1)
+print(the_day)
+```
+
+```{r plot2, echo = FALSE}
+print(the_day_detail)
+```
+
+```{r anomalies, echo = FALSE, fig.height = 8.5}
+weird_dates <- c("2018-08-24", "2018-08-26", "2018-03-27", "2019-02-02")
+weird_plot <- plot_day(df, weird_dates, hour_min = 7, hour_max = 18)
+strenuous <- plot_day(df, c("2018-03-24", "2018-06-12", "2018-04-13", "2018-04-08"), hour_min = 7, hour_max = 18)
+night_weird <- plot_day(df, c("2017-10-16", "2018-08-09"), hour_min = 0, hour_max = 24)
+other_weird <- plot_day(df, c("2018-04-25", "2018-10-04"), hour_min = 7, hour_max = 18)
+print(weird_plot)
+```
+\pagebreak
+```{r strenuous, echo = FALSE, fig.height = 8.5}
+print(strenuous)
+```
+
+```{r plot3, echo = FALSE, fig_height = 4}
+print(night_weird)
+```
+
+```{r plot4, echo = FALSE}
+print(other_weird)
+```
