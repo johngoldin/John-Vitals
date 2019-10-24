@@ -58,10 +58,10 @@ https://www.r-bloggers.com/taking-steps-in-xml/
 
 ```{r}
 health_data <- read_xml("apple_health_export/export.xml")
-
-steps <- xml_find_all(health_data, ".//Record[@type='HKQuantityTypeIdentifierStepCount']") %>%
+system.time(
+steps_alt <- xml_find_all(health_xml, ".//Record[@type='HKQuantityTypeIdentifierStepCount']") %>%
   map(xml_attrs) %>% 
-  map_df(as.list)
+  map_df(as.list))
 glimpse(steps)
 ```
 

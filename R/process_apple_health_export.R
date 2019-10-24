@@ -28,8 +28,8 @@ system.time(xml <- xmlParse("~/Downloads/apple_health_export/export.xml"))
 # with stringsAsFactors: 198 seconds on MacBook Pro. 135 seconds iMac, object.size = 254,709,120 bytes
 # with stringsAsFactors = FALSE  68 seconds on iMac, object.size = 801,701,088 bytes
 # with mutate to fix dates: 78 seconds on iMac, object.size = 328,599,032 bytes. This time 91 seconds
-system.time(health_df <- XML:::xmlAttrsToDataFrame(xml["//Record"], stringsAsFactors = FALSE) %>% 
-              as_tibble() %>%  
+system.time(health_df <- XML:::xmlAttrsToDataFrame(xml["//Record"], stringsAsFactors = FALSE) %>%
+              as_tibble() %>%
               mutate(startDate = as_datetime(str_sub(startDate, 1, 19)),
                      endDate = as_datetime(str_sub(endDate, 1, 19)),
                      creationDate = as_datetime(str_sub(creationDate, 1, 19)),
@@ -45,26 +45,26 @@ health_df$value <- as.numeric(as.character(health_df$value))
 # part of the datetime value. That makes movement across time zones tricy.
 # Use UTC_to_clock_by_tz to adjust for time zone and daylight savings effects.
 
-source("UTC_to_my_clock_time.R")
-system.time(health_df <- health_df %>% mutate(start_time_zone = get_my_time_zone(startDate)) %>% 
-  group_by(start_time_zone) %>% 
-  mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>% 
-  mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
-  group_by(end_time_zone) %>% 
-  mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
-  ungroup() %>% 
-  mutate(span = as.numeric(end_date - start_date)) %>% 
+source("R/UTC_to_my_clock_time.R")
+system.time(health_df <- health_df %>% mutate(start_time_zone = get_my_time_zone(startDate)) %>%
+  group_by(start_time_zone) %>%
+  mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>%
+  mutate(end_time_zone = get_my_time_zone(endDate)) %>%
+  group_by(end_time_zone) %>%
+  mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>%
+  ungroup() %>%
+  mutate(span = as.numeric(end_date - start_date)) %>%
   select(-startDate, -endDate))
 
 if (1 == 0) {
   steps <- health_df %>%
     filter(type == 'HKQuantityTypeIdentifierStepCount') %>%
-    group_by(date) %>% 
+    group_by(date) %>%
     mutate(steps = as.numeric(as.character(value))) %>%
     summarise(steps = sum(steps))
   distance <- health_df %>%
     filter(type == 'HKQuantityTypeIdentifierDistanceWalkingRunning') %>%
-    group_by(date) %>% 
+    group_by(date) %>%
     mutate(distance = as.numeric(as.character(value))) %>%
     summarise(distance = sum(distance))
   #filter(steps, month(date) == 5, year(date) == 2016) %>% print(n=1000)
@@ -72,7 +72,7 @@ if (1 == 0) {
 
 # based on https://taraskaduk.com/2019/03/23/apple-health/
 df_activity <- XML:::xmlAttrsToDataFrame(xml["//ActivitySummary"], stringsAsFactors = FALSE) %>% as_tibble()
-df_workout <-  XML:::xmlAttrsToDataFrame(xml["//Workout"], stringsAsFactors = FALSE) %>% as_tibble %>% 
+df_workout <-  XML:::xmlAttrsToDataFrame(xml["//Workout"], stringsAsFactors = FALSE) %>% as_tibble %>%
   mutate(startDate = as_datetime(str_sub(startDate, 1, 19)),
          endDate = as_datetime(str_sub(endDate, 1, 19)),
          creationDate = as_datetime(str_sub(creationDate, 1, 19)))

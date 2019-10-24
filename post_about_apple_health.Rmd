@@ -1,0 +1,359 @@
+---
+title: "Post about Apple Health"
+author: John Goldin
+date: '2019-11-01'
+categories:
+  - R
+slug: working-with-apple-health-export
+lastmod: '2019-10-06T08:50:22-04:00'
+layout: post
+type: post
+highlight: no
+draft: yes
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This post will work through the mechanics of moving data from the Apple Health app
+out of your iPhone and into R where you can analyze it. Next it will offer some
+tips on how to prepare and clean up the data a bit. Finally, it will 
+explore some of the properties of the types of data available
+via the Health app.
+
+##### First, export the data from the Health app
+
+From the Health app on your iPhone, one can export all of the data you are able to view via the Health app. 
+Open the Health app on your iPhone. 
+To export, you need to first go to your personal settings by
+clicking on your icon near the upper right corner of the Browse screen. 
+(See the the first screenshot below.)
+Click on the icon and you will see some of your personal settings. 
+You will need to scroll to the bottom of this page, where you will
+see a clickable line "Export All Health Data", as shown in the second screenshot below. 
+
+<style> 
+.row {
+  display: flex;
+}
+.column {
+  flex: 100%;
+  padding: 5px;
+}
+</style>
+<div class="row">
+  <div class="column">
+    <figure>
+      <figcaption> Browse Health app</figcaption>
+      <img src="health_app.PNG" alt="health app screenshot1" width="75%" height="100%" align="center"/>
+    </figure>
+  </div>
+  <div class="column">
+    <figure>
+      <figcaption>Export All Health Data</figcaption>
+      <img src="health_export_dialog.PNG" alt="health export screenshot" width="75%" height="100%" align="center"/>
+    </figure>
+  </div>
+</div>
+Once you click OK to go ahead with the export, it may take a significant amount of time.
+On my iPhone 8 it takes more than five minutes. Once it is complete, you'll get a 
+dialog that asks where to send the exported data. I use AirDrop to send it to the
+Mac where I am running RStudio. It ends up in the Downloads folder on that Mac.
+If you need to move the data to a Windows computer, you may need to send it
+via email or Dropbox.
+The exported file is named `export.zip`. If you double-click on that file it 
+will expand into a folder called `apple_health_export`. The uncompressed file is huge
+in comparison with the size of the zip file. In my case, `export.zip` is about
+79 megabytes while the `apple_health_export` folder is 2.45 gigabytes!
+In my R code, I uncompress the file into my Downloads folder, which is excluded
+from my Time Machine backups.
+
+##### R code to expand the export file and import it as XML data
+
+The R code below shows how to decompress `export.zip` and follow some
+basic steps to import it into R. I'm following in the footsteps of
+several people who have published code to accomplish these steps.
+See  work by [Ryan Praskievicz](https://gist.github.com/ryanpraski/ba9baee2583cfb1af88ca4ec62311a3d), [Taras Kaduk](https://taraskaduk.com/2019/03/23/apple-health/), [Raul Eulogio](https://www.inertia7.com/projects/149), and [Deepankar Datta](https://github.com/deepankardatta/AppleHealthAnalysis) (who has
+created a package called AppleHealthAnalysis). I'm sure there are other examples
+using R, and there are quite a number of examples using python (e.g., by [Mark Koester](http://www.markwk.com/data-analysis-for-apple-health.html).
+
+The R code uncompresses the zip file and replaces the `apple_health_export` folder. The
+big file inside that folder is `export.xml`. We
+use the XML package to covert the major elements of the XML file into
+tidy data frames.
+
+```{r load_libraries}
+library(tidyverse, quietly = TRUE)
+#library(jsonlite, quietly = TRUE)
+library(lubridate, quietly = TRUE)
+library(XML, quietly = TRUE)
+library(knitr)
+library(kableExtra)
+library(PerformanceAnalytics)
+library(janitor)
+library(scales)
+```
+```{r import_xml, echo = TRUE, cache = TRUE, message = FALSE}
+rc <- unzip("~/Downloads/export.zip", exdir = "~/Downloads", overwrite = TRUE)
+if (length(rc) != 0) file.remove("~/Downloads/export.zip")
+# once unzipped, delete export.zip. Otherwise, the next time Air Drop sends export.zip
+# to your mac it will be renamed as export2.zip and you may accidentally process
+# an out-of-date set of data.
+
+  # takes a bit more than 20 seconds on my iMac
+health_xml <- xmlParse("~/Downloads/apple_health_export/export.xml")
+  # takes about 70 seconds on my iMac
+health_df <- XML:::xmlAttrsToDataFrame(health_xml["//Record"], stringsAsFactors = FALSE) %>%
+    as_tibble() %>% mutate(value = as.numeric(value))
+
+activity_df <- XML:::xmlAttrsToDataFrame(health_xml["//ActivitySummary"], stringsAsFactors = FALSE) %>% 
+  as_tibble()
+workout_df <-  XML:::xmlAttrsToDataFrame(health_xml["//Workout"], stringsAsFactors = FALSE) %>% 
+  as_tibble
+clinical_df <- XML:::xmlAttrsToDataFrame(health_xml["//ClinicalRecord"]) %>% 
+  as_tibble()
+```
+
+I won't get into details of the XML structure of the health export.
+For most purposes, the Record, ActivitySummary, Workout, and Clinical data types
+will provide all that you are looking for. My expanded Apple Health Export
+folder also includes workout GPX files, electrocardiograms, and clinical
+records imported from my physician's medical records system.
+
+I have a bit over two years of Apple Watch data in my iPhone. There is a lot of
+data in the Apple Health Export. In fact, after a full career working
+as a data analyst, this is the largest number of data points
+I have ever dealt with. Extracting the "Record" data  from `export.xml` produces
+3.4 million rows and takes about 70 seconds on my 2019 iMac. 
+
+The counts by "type" describe the breadth and quantity of data:
+```{r freq_type}
+health_df2 <- health_df %>% 
+  mutate(source = case_when(
+    str_detect(sourceName, "Phone") ~ "Phone",
+    str_detect(sourceName, "Watch") ~ "Watch",
+    str_detect(sourceName, "Lose It") ~ "Lose It!",
+    TRUE ~ "Other"),
+    source = factor(source, levels = c("Watch", "Phone", "Lose It!", "Other")))
+health_df2 %>% 
+  janitor::tabyl(type, source) %>% 
+  janitor::adorn_totals("col") %>%  arrange(desc(Total)) %>% 
+  janitor::adorn_totals("row") %>% # do column total after arrange
+  kable(format.args = list(decimal.mark = " ", big.mark = ","),
+        caption = "Frquency by Type and Data Source", format = "markdown") %>% 
+  clipr::write_clip(allow_non_interactive = TRUE) %>% print()
+
+```
+
+
+
+
+Most of the data is collected via the Apple Watch. Some basic movement data is collected by the iPhone. I have been using the *Lose It!* app on my iPhone for about six months to count calories,
+and that produces quite a bit of data. The free version of the app which I am using does not display much beyond
+basic calorie counts. It's interesting to see that the more detailed nutrition breakdowns are passed
+into the Health app. I haven't attempted to look at any of the
+nutrition information.
+
+As far as the "Other" category, I'm using an Omron blood pressure cuff that can transfer readings to the Omron app on the iPhone via Bluetooth. Those
+readings are then updated in the Apple Health database. There are a few odds and ends contributed by apps on my iPhone
+such as AllTrails, Breathe, and AutoSleep.
+
+Sometimes the same data may be repeated on multiple sources so it is important to pay attention to `sourceName`.
+Note that step counts, flights climbed, and distance walking/running
+come from both the Watch and the iPhone. On any particular day you probably want to only include one of the sources.
+Otherwise you risk double counting. Generally I am focused on the Watch data, but I have almost three years of
+data from my iPhone before I started wearing the Apple Watch.
+
+The other major XML categories are ActivitySummary, Workout, and ClinicalRecord. For ActivitySummary I have one row per
+day which basically summarizes some of the intra-day activity data. Workout has one row per workout. If I were
+still running I would focus much more on that data frame. For each workout it shows type, distance, duration, 
+and energy burned Most of my workouts are outdoor walks. Quite often I forget to end the workout when I end the walk,
+which certainly reduces the usefulness of the data. But I would imagine that for a runner or a swimmer or a cyclist, 
+the Workout information would be interesting and useful.
+
+ClinicalRecord is a bit tricky. I have set things up so that my health organization shares my health records with the
+Apple Health app.
+
+```{r count_clin_record_types}
+clinical_df %>% count(type) %>% kable(format = "markdown", caption = "Types of Clinical Items")
+```
+
+In the clinical data frame there is a column called `resourceFilePath` that contains 
+the path to a json dataset in the `Apple Health Export/clinical records` folder. Presumably
+this would allow you to retrieve items such as individual lab test results. 
+I haven't made any attempt to get into this data.
+
+### The Problem of Time Zones and Daylight Savings
+
+When I first ttried to look at day by day data for resting heart rate I bumped into
+problems cause by the issue of time zones. I have about 745 rows of data of type
+`HKQuantityTypeIdentifierRestingHeartRate` which should be one per day. 
+I quickly discovered I had several days where there were two values in a single day, 
+and that was related to
+occasions when I traveled by air to a different time zone.
+
+This leads us to a long digression on the subject of computer time stamps and time zones. 
+(There is an [entertaining video](https://www.youtube.com/watch?v=-5wpm-gesOY) that describes
+the general problem of time stamps and time zones, but it doesn't relate to the specific
+problems that I will get into here. It's fun if you want to nerd out on this topic.)
+
+Each item in the records of the health dataset has a creation, start, and end time stamp. In the export dataset
+they appear as a character string that looks like this: "2019-04-10 07:10:34 -0400". 
+The "-0400" on the end
+is because as I write this local time is Eastern Daylight Savings which is four hours 
+earlier than UTC (universal
+time code). At first I thought that time code info would take care of everything. 
+In fact, it is useless.
+As near as I can tell, the internal data has no indication of time zone. 
+The UTC offset is attached to the datetime information when the data is exported. 
+Ever single time stamp in the exported dataset has the same "-0400" offset,
+which merely represent my local offset at the time the export was done. 
+If I re-exported that data after the
+switch to Eastern Standard Time, all of the offsets will appear as "-0500". 
+In fact, the exported data has no information about time zone. 
+When I did a workout in San Diego in January, the time stamp that was attached to that workout
+was the local time when I did the workout. In the export file now it has a UTC offset of "-0400". 
+In reality, local time when I did the workout was offset from UTC by "-0800" (i.e.. 8 hours). 
+I can tell that this is an issue of how the Apple Health data stores 
+the date and time because I can see the issue via the Activity app on my phone,
+not just in the export. 
+I go into the Activity app on my iPhone and see that it claims I started a walk in England 
+on 9/1/2019 at 05:51:58. I'm not that much of an early riser. 
+I know from my travel diary that I actually got started four hours later than that
+at 09:51:58 local time. 
+If I went back to look at the same workout after the change from daylight savings to standard
+time, it would appear as 04:51:58 rather than 05:51:58.
+
+When does this matter? 
+With a multi-time-zone shift, it's not hard to end up with datetime stamps that appear in
+the wrong day. 
+Compounding the problem is that things like resting heart rate are not always
+saved in the data at the same hour of the day. 
+A number of items like resting heart rate are recorded once per day.
+But because of time zone issues, you can end up with two on one day and none on another. 
+Also, there may be situations where you want to look at patterns over the course of a day. 
+At one point I wanted to look at whether there were periods when my heart rate was 
+unusually high during normal sleeping hours. 
+I looked for a heart rate above 120 between the hours of 11PM and 6AM. 
+I got hits for when I was hiking in England or Greece because the 
+datetime stamp appeared to be during those night time hours when in fact the local time
+was shifted five or seven hours because of the different time zone.
+
+This is a tricky problem. I use the `lubridate` package to deal with the datetime stamps. 
+R relies on a Unix-based standard for dates and time called 
+[POSIX](https://en.wikipedia.org/wiki/POSIX) that is implemented as a class 
+called POSIXct. You can see lots of references to POSIXct in the `lubridate` documentation. 
+The `as_datetime` function in `lubridate` allows you to add a `tz` parameter that 
+specifies the time zone. 
+The trick is that the time zone is stored as an **attribute** of the vector 
+rather than as part of the data. 
+If you have a vector of `datetime` data, 
+the time zone attribute applies to the entire vector, not  to individual elements
+in the vector. 
+If you want to store time zones that vary within the vector, you need to store them in a separate
+vector, and that's not part of the R standard for handling dates and times. 
+You're on your own. The `lubridate` package includes some functions to help convert vectors 
+from one time zone to another and to deal somewhat with
+daylight savings. 
+But it does not automatically help with a vector that contains datetime information from
+varying time zones (as well as different daylight savings issues). 
+(See [Clayton Yochum](https://blog.methodsconsultants.com/posts/timezone-troubles-in-r/) 
+for a more detailed discussion of general time zone messiness in R.)
+
+As I searched the web for tips on how to approach this issue, I discovered that
+there's a population of people who are working hard to maintain a streak 
+in filling their activity rings in the Apple Activity app.
+Some of those individuals get frustrated because they are tripped up
+by movement across time zones or even changes to daylight savings.
+There are a number of tips out there for activity tracking in the face of 
+[issue of crossing time zones](https://9to5mac.com/2018/04/02/how-to-fill-apple-watch-activity-rings-while-traveling-timezones/). 
+
+#### My Treatment of Time Zones and the Apple Health Export
+
+Here I describe a solution to the time zone issue, but it is not very elegant.
+
+First I wrote a function  `get_my_time_zone` that identifies in what time zone I was 
+located during the two year period for which I need time zone info to interpret watch data. The
+function hard codes when I landed in a different time zone and therefore changed
+the time zone on my watch. That's the aspect of this solution that is not very elegant.
+
+```{r clean_up_time_zones}
+get_my_time_zone <- function(dt) {
+  # What I'm going for is the time zone used by my watch. 
+  # I'm assuming my watch got the local clock time about the
+  # same time as the scheduled arrival for my flight.
+  time_zone <- case_when(
+    (dt >= as_datetime("2018-01-31 16:00:00")) & # trip to RStudio conference
+      (dt <= as_datetime("2018-02-07 13:01:00")) ~ "America/Los_Angeles",
+    (dt >= as_datetime("2018-04-18 08:00:00")) & # trip to Amsterdam
+      (dt <= as_datetime("2018-04-20 13:50:00")) ~  "Europe/Amsterdam",
+    (dt >= as_datetime("2018-04-20 13:50:00")) & # trip to Athens
+      (dt <= as_datetime("2018-04-30 15:52:00")) ~  "Europe/Athens",
+    (dt >= as_datetime("2019-06-21 03:45:00")) & # trip to SW England
+      (dt <= as_datetime("2019-07-05 13:25:00")) ~  "Europe/London",
+    (dt >= as_datetime("2019-08-28 06:30:00")) & # trip to Manchester
+      (dt <= as_datetime("2019-09-10 12:40:00")) ~  "Europe/London",
+    TRUE ~ "America/New_York" # good old Eastern time, home sweet home
+  )
+  return(time_zone)
+}
+get_my_time_zone <- compiler::cmpfun(get_my_time_zone)
+```
+
+
+
+
+Next I need to use `lubridate` functions to adjust the Apple Health export 
+time stamps so that the hour corresponds to the local time I actually experienced.
+
+
+```{r UTC_to_clock_by_tz}
+# I will be applying this function to nearly a million times so it's important
+# that it be vectorized and compiled. Vectorized is what really counts.
+UTC_to_clock_by_tz <- function(dt, time_zone) {
+  # adjust a vector of datetime to a specific time zone and report as though it were utc
+  tz(dt) <- .sys.timezone    # make sure vector is set to my current local time zone
+  utc <- with_tz(dt, tzone = "UTC")   # what is the datetime in terms of UTC
+  # with_tz is the key lubridate function that I am relying on. Handles daylight savings as well.
+  local <- with_tz(utc, time_zone) # now adjust utc to the time zone I want
+  tz(local) <- "UTC"    # treat everything as if it were UTC, even if it isn't, because the whole vector has to be one arbitrary time zone when I bind rows together
+  # Although the vector is marked as UTC, I will treat the hour as being whatever the local
+  # time was that I experienced then.
+  return(local)
+}
+```
+
+Next I will apply the `UTC_to_clock_by_tz` function to the character time stamps
+in the Apple Health Export. The function needs to be applied to a vector with
+the same time zone for all elements in the vector. By doing `group_by(start_time_zone)`
+before I use the function inside `mutate`, the function will be applied with a 
+different time zone for each group. 
+That way the function is vectorized for each group and is reasonably fast. 
+I have to group the time zones separately for the start date and the end date. Usually
+they would be in the same tine zone, but that's not something I can count on. I
+also calculate `span` to be the time between the start_date and the end_date. We
+will see below how that can be an important diagnostic tool.
+
+```{r adjust_time_stamps, cache = TRUE}
+system.time(
+  health_df <- health_df %>% 
+    mutate(startDate = as_datetime(str_sub(startDate, 1, 19)),
+           endDate = as_datetime(str_sub(endDate, 1, 19)),
+           creationDate = as_datetime(str_sub(creationDate, 1, 19)),
+           start_time_zone = get_my_time_zone(startDate)) %>% 
+    group_by(start_time_zone) %>% 
+    mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>% 
+    mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
+    group_by(end_time_zone) %>% 
+    mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
+    ungroup() %>% 
+    mutate(span = as.numeric(end_date - start_date)) %>% 
+    select(-startDate, -endDate)
+  # I'm going to focus on health_df, but I could adjust times in the other df's as well
+)
+```
+
+#### Focusing on Specific Types of Data
+
