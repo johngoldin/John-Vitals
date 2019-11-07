@@ -1,0 +1,98 @@
+---
+title: "Explore Movement"
+output: html_notebook
+---
+ 
+
+```{r filter_movement}
+movement <- health_df %>% 
+  filter(as_date(start_date) >= ymd("2017-10-03"),
+    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+                     "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",
+                      "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierAppleExerciseTime",
+                     "xHKQuantityTypeIdentifierHeartRate"),
+         (str_detect(sourceName, "Watch") | str_detect(sourceName, "Phone"))) %>% 
+  mutate(type = case_when(
+    type == "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active_Energy",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Walking_Phone",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Walking_Watch",
+    type == "HKQuantityTypeIdentifierDistanceCycling" ~ "Cycling",
+    (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Phone")  ~ "Climb_Phone",
+    (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Watch")  ~ "Climb_Watch",
+    (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Phone") ~ "Steps_Phone",
+     (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Watch") ~ "Steps_Watch",
+    (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Phone") ~ "Exercise_Phone",
+    (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Watch") ~ "Exercise_Watch",
+    type == "HKQuantityTypeIdentifierHeartRate" ~ "Heart_Rate"
+  ),
+  hour = hour(start_date), date_start = (as_date(start_date)),
+  span2 = case_when(
+    span <= (5 * 60) ~ "<= 5",
+    span <= (10 * 60) ~ "5-10",
+    span <= (20*60) ~ "10-20",
+    span <= (40*60) ~ "20-40",
+    span <= (60*60) ~ "40-60",
+    TRUE ~ ">60"
+  ),
+  span2 = factor(span2, levels = c("<= 5", "5-10", "10-20", "20-40", "40-60", ">60" )))
+```
+
+```{r span_size}
+movement %>% mutate(year = year(start_date)) %>% tabyl(type, year)
+
+movement %>% mutate(year = year(start_date)) %>% tabyl(year, type, span2)
+
+movement2 <- movement %>% mutate(year = year(start_date)) %>% 
+  group_by(type, year) %>% 
+  summarise(p25 = quantile(span, probs = 0.25, na.rm = TRUE),
+            p50 = quantile(span, probs = 0.5, na.rm = TRUE),
+            p75 = quantile(span, probs = 0.75, na.rm = TRUE),
+            p90 = quantile(span, probs = 0.9, na.rm = TRUE))
+
+movement2 %>% select(p50)
+```
+
+
+```{r trim_outliers}
+hr_by_hour = health_df %>% 
+  filter(type == "HKQuantityTypeIdentifierHeartRate") %>% 
+  mutate(type = "Heart_Rate", 
+         hour = hour(start_date), date_start = (as_date(start_date)),
+         span2 = "") %>% 
+  group_by(type, date_start, hour) %>% 
+  summarise(value = mean(value, na.rm = TRUE), hr_readings = n()) %>% 
+  filter(value > 40) %>% 
+  ungroup()
+  
+ full_set_columns <- movement %>%
+   filter(span < (40*60)) %>% 
+   group_by(type, date_start, hour) %>% 
+   summarise(value = sum(value, na.rm = TRUE)) %>% 
+   mutate(value = case_when(
+     (type == "Walking_Phone") & (value > 5) ~ NA_real_,
+     (type == "Walking_Watch") & (value > 5) ~ NA_real_,
+     (type == "Steps_Phone") & (value > 7000) ~ NA_real_,
+     (type == "Climb_Phone") & (value > 50) ~ NA_real_,
+     TRUE ~ value,
+   )) %>% 
+   bind_rows(hr_by_hour %>% select(-hr_readings)) %>% 
+   bind_rows(hr_by_hour %>% mutate(type = "hr_readings", value = hr_readings) %>% 
+               select(-hr_readings)) %>% 
+   group_by(date_start, hour) %>% 
+    spread(type, value) %>%
+    # mutate_at(vars(-group_cols(), -Heart_Rate), ~ if_else(is.na(.x),as.double(0),as.double(.x))) %>%
+   ungroup()  
+ for_corr <- full_set_columns %>% 
+    select(Walking_Phone, Walking_Watch, Active_Energy, Steps_Phone, Steps_Watch, Climb_Phone, Climb_Watch, Heart_Rate, hr_readings)
+  chart.Correlation(for_corr %>% select(Walking_Phone, Walking_Watch, Active_Energy, Steps_Phone, Steps_Watch, Climb_Phone, Climb_Watch, Heart_Rate, hr_readings))
+```
+
+
+Summary of number of heart readings per hour in 2019:
+
+summary(tt$hr_readings)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   1.00   12.00   13.00   53.87   15.00  720.00 
+   
+Median is 13 and interquartile range goes from 12 to 15.  At 13 readings per hour, that's an average of one
+reading per 4.6 minutes. I'd say that in general the watch takes a he

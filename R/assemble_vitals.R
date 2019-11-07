@@ -84,9 +84,34 @@ watch_steps %>% mutate(year = year(start_date),
             span50 = quantile(span, probs = .5, na.rm = TRUE),
             span75 = quantile(span, probs = .75, na.rm = TRUE),
             span95 = quantile(span, probs = .95, na.rm = TRUE),
+            spanmax = max(span, na.rm = TRUE),
             begin = min(date_start, na.rm = TRUE),
             end = max(date_start, na.rm = TRUE),
             n = n()) %>% print(n = 1000)# look for outliers
+# middle of the night steps
+watch_steps %>% mutate(year = year(start_date),
+                       date_start = as_date(start_date),
+                       hour = hour(start_date)) %>%
+  filter(hour > 0, hour <= 4) %>%
+  group_by(sourceVersion) %>%
+  summarise(median_speed = quantile(step_per_min, probs = .5, na.rm = TRUE),
+            span25 = quantile(span, probs = .25, na.rm = TRUE),
+            span50 = quantile(span, probs = .5, na.rm = TRUE),
+            span75 = quantile(span, probs = .75, na.rm = TRUE),
+            span95 = quantile(span, probs = .95, na.rm = TRUE),
+            spanmax = max(span, na.rm = TRUE),
+            n = n(),
+            steps = median(value, na.rm = TRUE),
+            begin = min(date_start, na.rm = TRUE),
+            end = max(date_start, na.rm = TRUE),
+            ) %>% print(n = 1000)# look for outliers
+
+next_day_steps <- watch_steps %>%
+  mutate(date_start = as_date(start_date),
+         date_end = as_date(end_date)) %>%
+  filter(span > 500, date_end > start_date) %>%
+  select(sourceVersion, start_date, end_date, value, span)
+next_day_steps %>% print(n = 1000)
 step1 <-  health_df %>%
   filter(str_detect(type, "StepCount"), str_detect(sourceName, "Phone")) %>%
   mutate(date = date(start_date), step_per_min = (value / span) * 60 )

@@ -195,5 +195,86 @@ got_xml <- read_xml(got_chars_xml())
 df %>% count(type) %>% arrange(desc(n)) %>% kable()
 ```
 
+here I will stash raw workout data as it appears in the export file, before and after change in time zone on November 3 2019:
 
+> workout_df %>% arrange(desc(startDate)) %>% select(startDate, totalDistance, duration)
+# A tibble: 434 x 3
+   startDate                 totalDistance      duration         
+   <chr>                     <chr>              <chr>            
+ 1 2019-10-23 16:23:21 -0400 0.5473660299954509 11.74872166514397
+ 2 2019-10-22 13:49:38 -0400 3.222100507149329  115.0385558168093
+ 3 2019-10-22 10:02:35 -0400 4.153307404893073  107.3226322154204
+ 4 2019-10-21 16:24:51 -0400 0.5657689312069328 12.01207630634308
+ 5 2019-10-20 14:42:07 -0400 2.289949799346769  56.60284678339958
+ 
+ > workout_df %>% arrange(desc(startDate)) %>% select(startDate, totalDistance, duration)
+# A tibble: 440 x 3
+   startDate                 totalDistance      duration         
+   <chr>                     <chr>              <chr>            
+ 7 2019-10-23 15:23:21 -0500 0.5473660299954509 11.74872166514397
+ 8 2019-10-22 12:49:38 -0500 3.222100507149329  115.0385558168093
+ 9 2019-10-22 09:02:35 -0500 4.153307404893073  107.3226322154204
+10 2019-10-21 15:24:51 -0500 0.5657689312069328 12.01207630634308
+
+```{r}
+after_dst <- health_df %>% filter(type == "HKQuantityTypeIdentifierHeartRate", str_detect(startDate, "^2019-03-10"))
+after_dst_nov <- health_df %>% filter(type == "HKQuantityTypeIdentifierHeartRate", str_detect(startDate, "^2018-11-04"))
+after_dst_nov_burn <- health_df %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", str_detect(startDate, "^2018-11-04")) %>% select(creationDate, startDate, endDate,value) %>% arrange(startDate)
+during_dst_nov_burn <- health_df_DST %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", str_detect(startDate, "^2018-11-04")) %>% select(creationDate, startDate, endDate, value) %>% arrange(startDate)
+after_dst_nov_burn03 <- health_df %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", str_detect(startDate, "^2018-11-03")) %>% select(creationDate, startDate, endDate,value) %>% arrange(startDate)
+during_dst_nov_burn03 <- health_df_DST %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", str_detect(startDate, "^2018-11-03")) %>% select(creationDate, startDate, endDate, value) %>% arrange(startDate)
+HKQuantityTypeIdentifierActiveEnergyBurned
+```
+
+now look at adjusted times
+
+```{r}
+after_dst_nov_burn_adj <- health_df %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", as_date(start_date) == ymd("2018-11-04")) %>% select(creationDate, start_date, end_date,value) %>% arrange(start_date)
+after_dst_nov_burn03_adj <- health_df %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned", as_date(start_date) == ymd("2018-11-03")) %>% select(creationDate, start_date, end_date,value) %>% arrange(start_date)
+
+during_dst_nov_burn03 %>% filter(startDate > "2018-11-03 23:00")
+```
+
+The first seven values for November 4, 2018 as exported during standard time:
+> during_dst_nov_burn %>% head(7)
+# A tibble: 7 x 4
+  creationDate              startDate                 endDate                   value
+  <chr>                     <chr>                     <chr>                     <dbl>
+1 2018-11-04 00:13:58 -0400 2018-11-04 00:08:03 -0400 2018-11-04 00:08:23 -0400 0.043
+2 2018-11-04 00:13:58 -0400 2018-11-04 00:09:14 -0400 2018-11-04 00:09:24 -0400 0.154
+3 2018-11-04 00:35:30 -0400 2018-11-04 00:16:54 -0400 2018-11-04 00:17:05 -0400 0.155
+4 2018-11-04 00:35:30 -0400 2018-11-04 00:19:48 -0400 2018-11-04 00:20:19 -0400 0.2  
+5 2018-11-04 00:55:02 -0400 2018-11-04 00:51:31 -0400 2018-11-04 00:52:33 -0400 0.238
+6 2018-11-04 01:05:55 -0400 2018-11-04 00:54:25 -0400 2018-11-04 00:54:56 -0400 0.116
+7 2018-11-04 01:13:44 -0400 2018-11-04 00:54:56 -0400 2018-11-04 00:55:27 -0400 0.194
+
+The last seven values for November 3, 2018 as exported during daylight savings time:
+> after_dst_nov_burn03 %>% tail(7)
+# A tibble: 7 x 4
+  creationDate              startDate                 endDate                   value
+  <chr>                     <chr>                     <chr>                     <dbl>
+1 2018-11-03 23:13:58 -0500 2018-11-03 23:08:03 -0500 2018-11-03 23:08:23 -0500 0.043
+2 2018-11-03 23:13:58 -0500 2018-11-03 23:09:14 -0500 2018-11-03 23:09:24 -0500 0.154
+3 2018-11-03 23:35:30 -0500 2018-11-03 23:16:54 -0500 2018-11-03 23:17:05 -0500 0.155
+4 2018-11-03 23:35:30 -0500 2018-11-03 23:19:48 -0500 2018-11-03 23:20:19 -0500 0.2  
+5 2018-11-03 23:55:02 -0500 2018-11-03 23:51:31 -0500 2018-11-03 23:52:33 -0500 0.238
+6 2018-11-04 00:05:55 -0500 2018-11-03 23:54:25 -0500 2018-11-03 23:54:56 -0500 0.116
+7 2018-11-04 00:13:44 -0500 2018-11-03 23:54:56 -0500 2018-11-03 23:55:27 -0500 0.194
+
+Depending on when you do the export, these values will be included with Novermber 3rd or
+November 4th. The second version is the time I experienced when the values
+occurred during the last hour of November 3rd (the day before daylight savings ended).
+
+In general, if one does the export during daylight savings, the datetime stamp
+will be "correct" for values that occurred during daylight savings time, but one
+hour off for values that occurred during standard time. And if one does the export
+during standard time, the reverse will be true. The datetime stamp will
+be "correct" for values recorded during standard time, but one hour off for
+those recorded during daylight savings.
+
+and now for activity:
+
+```{r}
+activity_df_DST %>% filter(st)
+```
 

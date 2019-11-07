@@ -150,30 +150,44 @@ health_df2 %>%
 
 
 
-Most of the data is collected via the Apple Watch. Some basic movement data is collected by the iPhone. I have been using the *Lose It!* app on my iPhone for about six months to count calories,
-and that produces quite a bit of data. The free version of the app which I am using does not display much beyond
-basic calorie counts. It's interesting to see that the more detailed nutrition breakdowns are passed
-into the Health app. I haven't attempted to look at any of the
-nutrition information.
+Most of the data is collected via the Apple Watch. 
+Some basic movement data is collected by the iPhone. 
+I have been using the *Lose It!* app on my iPhone for about six months to count calories,
+and that produces quite a bit of data. 
+The free version of the app which I am using does not display much beyond
+basic calorie counts. 
+It's interesting to see that the more detailed nutrition breakdowns are passed
+into the Health app. I haven't attempted to look at any of the nutrition information.
 
-As far as the "Other" category, I'm using an Omron blood pressure cuff that can transfer readings to the Omron app on the iPhone via Bluetooth. Those
-readings are then updated in the Apple Health database. There are a few odds and ends contributed by apps on my iPhone
+As far as the "Other" category, I'm using an Omron blood pressure cuff 
+that can transfer readings to the Omron app on the iPhone via Bluetooth. Those
+readings are then updated in the Apple Health database. 
+There are a few odds and ends contributed by apps on my iPhone
 such as AllTrails, Breathe, and AutoSleep.
 
-Sometimes the same data may be repeated on multiple sources so it is important to pay attention to `sourceName`.
+Sometimes the same data may be repeated on multiple sources
+so it is important to pay attention to `sourceName`.
 Note that step counts, flights climbed, and distance walking/running
-come from both the Watch and the iPhone. On any particular day you probably want to only include one of the sources.
-Otherwise you risk double counting. Generally I am focused on the Watch data, but I have almost three years of
+come from both the Watch and the iPhone. 
+On any particular day you probably want to include only one of the sources.
+Otherwise you risk double counting. 
+Generally I am focused on the Watch data, but I have almost three years of
 data from my iPhone before I started wearing the Apple Watch.
 
-The other major XML categories are ActivitySummary, Workout, and ClinicalRecord. For ActivitySummary I have one row per
-day which basically summarizes some of the intra-day activity data. Workout has one row per workout. If I were
-still running I would focus much more on that data frame. For each workout it shows type, distance, duration, 
-and energy burned Most of my workouts are outdoor walks. Quite often I forget to end the workout when I end the walk,
-which certainly reduces the usefulness of the data. But I would imagine that for a runner or a swimmer or a cyclist, 
+The other major XML categories are ActivitySummary, Workout, and ClinicalRecord. 
+For ActivitySummary I have one row per
+day which basically summarizes some of the intra-day activity data. 
+Workout has one row per workout. If I were
+still running I would focus much more on that data frame. 
+For each workout it shows type, distance, duration, 
+and energy burned Most of my workouts are outdoor walks. 
+Quite often I forget to end the workout when I end the walk,
+which certainly reduces the usefulness of the data. 
+But I would imagine that for a runner or a swimmer or a cyclist, 
 the Workout information would be interesting and useful.
 
-ClinicalRecord is a bit tricky. I have set things up so that my health organization shares my health records with the
+ClinicalRecord is a bit tricky. 
+I have set things up so that my health organization shares my health records with the
 Apple Health app.
 
 ```{r count_clin_record_types}
@@ -183,7 +197,8 @@ clinical_df %>% count(type) %>% kable(format = "markdown", caption = "Types of C
 In the clinical data frame there is a column called `resourceFilePath` that contains 
 the path to a json dataset in the `Apple Health Export/clinical records` folder. Presumably
 this would allow you to retrieve items such as individual lab test results. 
-I haven't made any attempt to get into this data.
+I haven't made any attempt to get into this data. I only know what's available
+here because I can view it via the Apple Health app.
 
 ### The Problem of Time Zones and Daylight Savings
 
@@ -351,9 +366,51 @@ system.time(
     ungroup() %>% 
     mutate(span = as.numeric(end_date - start_date)) %>% 
     select(-startDate, -endDate)
-  # I'm going to focus on health_df, but I could adjust times in the other df's as well
 )
+# Here I'll adjust time for workout_df as well
+workout_df <- workout_df %>% 
+  mutate(startDate = as_datetime(str_sub(startDate, 1, 19)),
+         endDate = as_datetime(str_sub(endDate, 1, 19)),
+         creationDate = as_datetime(str_sub(creationDate, 1, 19)),
+         start_time_zone = get_my_time_zone(startDate)) %>% 
+  group_by(start_time_zone) %>% 
+  mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>% 
+  mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
+  group_by(end_time_zone) %>% 
+  mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
+  ungroup() %>% 
+  mutate(span = as.numeric(end_date - start_date)) %>% 
+  select(-startDate, -endDate)
+# I'm going to focus on health_df, but I could adjust times in the other df's as well
 ```
 
-#### Focusing on Specific Types of Data
+Save some stuff so that I can skip the slow steps above:
+
+```{r interim_save}
+save(health_xml, health_df, activity_df, workout_df, clinical_df, file = "interim_save.RData")
+
+# print(load("interim_save.RData"))
+```
+
+
+### Focusing on Specific Types of Data
+
+First let's focus on items where where multiple measurements are taken over the
+course of the day. A prime example is heart rate, which records the pulse at
+a partikcular point in time. But there are a number of items
+where a quantity is accumulated over a short span of time, for example: steps taken, 
+distance traveled, energy burned, flights climbed, period of exercise. All of these
+have to do with movement and, as we'll see, are higly correlated.
+
+Each measurement for these items has a start time stamp and an end time stamp. In
+R terms the time stamp is a `datetime` class. We have already spent a lot
+of effort on correcting these datetime stamps for movements across time zones.
+Next, let's examine these measurements in more detail. We have already 
+calculated an item called `span` which is the difference between the start and
+end of the measurement period in seconds. This provides some useful diagnostic
+information about the nature of the measurements.
+
+```{r examine_span}
+
+```
 

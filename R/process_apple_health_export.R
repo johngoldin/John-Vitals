@@ -80,6 +80,6 @@ df_workout <-  XML:::xmlAttrsToDataFrame(xml["//Workout"], stringsAsFactors = FA
 
 
 
-source("create_bp_dataset.R")
+source("R/create_bp_dataset.R")
 
 

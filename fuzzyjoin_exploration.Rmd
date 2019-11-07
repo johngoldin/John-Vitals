@@ -1,0 +1,148 @@
+---
+title: "fuzzyjoin exploration"
+output: html_notebook
+---
+
+https://github.com/dgrtwo/fuzzyjoin
+
+interval_inner_join
+This requires the IRanges package from Bioconductor. See here for installation: https://bioconductor.org/packages/release/bioc/html/IRanges.html.
+
+```{r}
+library(fuzzyjoin)
+
+requireNamespace("IRanges", quietly = TRUE)
+```
+
+
+```{r}
+all_data <- health_df %>% 
+  filter(start_date >= as_datetime(ymd("2019-09-01"))) %>% 
+         filter(start_date <= as_datetime(ymd("2019-09-30")))
+workouts <- workout_df %>% 
+  filter(start_date >= as_datetime(ymd("2019-09-01")),
+         end_date <= as_datetime(ymd("2019-09-30")))
+```
+
+```{r try_join}
+# workout_df2 <- workout_df %>% 
+#   mutate(duration = as.numeric(duration), date = as_date(start_date))
+try1 <- all_data %>% rename(start = start_date, end = end_date) %>% 
+  mutate(end = if_else(type == "HKQuantityTypeIdentifierHeartRate", end + seconds(1), end)) %>%   
+  filter(end > start) %>% 
+  interval_left_join(
+    workouts %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned,
+                  duration) %>%
+      mutate(int_length = as.numeric(end) - as.numeric(start)) %>% 
+      filter(end > start))
+
+workout_by_date = workouts %>% 
+  mutate(date = as_date(start_date), 
+         int_length = as.numeric(end_date) - as.numeric(start_date)) %>% 
+  group_by(date) %>% summarise(workout_minutes = sum(int_length/60, na.rm = TRUE)) %>% 
+  ungroup()
+
+# try2 <- try1 %>% 
+#   mutate(hour = hour(start.x),
+#          date = as_date(start.x),
+#          group = case_when(
+#            !is.na(workoutActivityType) ~ "Workout",
+#            (hour > 23) | (hour < 5) ~ "Sleep",
+#            TRUE ~ "Day"
+#         )
+#     ) %>% 
+#   group_by(date) %>%  
+#   filter(type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+#                      "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",
+#                       "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierAppleExerciseTime",
+#                      "xHKQuantityTypeIdentifierHeartRate"),
+#          (str_detect(sourceName, "Watch") | str_detect(sourceName, "Phone"))) %>% 
+#   mutate(type = case_when(
+#     type == "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active_Energy",
+#     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Walking_Phone",
+#     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Walking_Watch",
+#     type == "HKQuantityTypeIdentifierDistanceCycling" ~ "Cycling",
+#     (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Phone")  ~ "Climb_Phone",
+#     (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Watch")  ~ "Climb_Watch",
+#     (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Phone") ~ "Steps_Phone",
+#      (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Watch") ~ "Steps_Watch",
+#     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Phone") ~ "Exercise_Phone",
+#     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Watch") ~ "Exercise_Watch",
+#     type == "HKQuantityTypeIdentifierHeartRate" ~ "Heart_Rate"
+#   ),
+#   hour = hour(start.x), date_start = (as_date(start.x)),
+#   span2 = case_when(
+#     span <= (5 * 60) ~ "<= 5",
+#     span <= (10 * 60) ~ "5-10",
+#     span <= (20*60) ~ "10-20",
+#     span <= (40*60) ~ "20-40",
+#     span <= (60*60) ~ "40-60",
+#     TRUE ~ ">60"
+#   ),
+#   span2 = factor(span2, levels = c("<= 5", "5-10", "10-20", "20-40", "40-60", ">60" )))
+
+  # summarise(workout_minutes = sum(int_length/60, na,rm = TRUE),
+
+
+
+
+```
+
+
+```{r workout_by_type}
+try3 <- try1 %>% 
+  mutate(type2 = case_when(
+    str_detect(type, "StepCount") & str_detect(sourceName, "Watch") ~ "Steps Watch",
+    str_detect(type, "StepCount") & str_detect(sourceName, "Phone") ~ "Steps Phone",
+    !str_detect(sourceName, "Watch") ~ "Other",
+    type == "HKQuantityTypeIdentifierHeartRate" ~ "Heart Rate",
+    type ==  "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active Energy",
+    type == "HKQuantityTypeIdentifierBasalEnergyBurned" ~ "Basal Energy",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Distance Watch",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Distance Phone",
+    TRUE ~ "Other"
+  ),
+    hour = hour(start.x), date_start = (as_date(start.x)),
+  span2 = case_when(
+    span <= (5 * 60) ~ "<= 5",
+    span <= (10 * 60) ~ "5-10",
+    span <= (20*60) ~ "10-20",
+    span <= (40*60) ~ "20-40",
+    span <= (60*60) ~ "40-60",
+    TRUE ~ ">60"
+  ),
+  span2 = factor(span2, levels = c("<= 5", "5-10", "10-20", "20-40", "40-60", ">60" )),
+  group = case_when(
+           !is.na(workoutActivityType) ~ "Workout",
+           (hour > 23) | (hour < 5) ~ "Sleep",
+           TRUE ~ "Day"
+        ))
+try4 <- try3 %>% 
+  filter(type2 %in% c("Active Energy", "Heart Rate", "Basal Energy", 
+                      "Steps Watch", "Distance Watch")) %>% 
+  group_by(date_start, group) %>% 
+  summarise(Active_Energy = sum(type2 == "Active Energy"),
+            Basal_Energy = sum(type2 == "Basal Energy"),
+             Heart_Rate = sum(type2 == "Heart Rate"),
+            Steps = sum(type2 == "Steps Watch"),
+            Distance = sum(type2 == "Distance Watch"),
+           ) %>% 
+  left_join(workout_by_date, by = c("date_start" = "date"))
+try5 <- try4 %>% 
+  mutate(
+    workout_minutes = ifelse(is.na(workout_minutes), 0.0, workout_minutes),
+    denom = case_when(
+      group == "Sleep" ~ 6 * 60,
+      group == "Day" ~ (18 * 60) - workout_minutes,
+      group == "Workout" ~ workout_minutes
+    ),
+    ae = denom / Active_Energy, be = denom / Basal_Energy, 
+    hr = denom / Heart_Rate, steps = denom /Steps, dist = denom / Distance) 
+try6 <- try5 %>% 
+  group_by(group) %>% 
+  select(group, ae, be, hr, dist) %>% 
+  summarise_all(mean, na.rm = TRUE)
+  
+
+```
+
