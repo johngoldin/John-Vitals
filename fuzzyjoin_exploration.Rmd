@@ -146,3 +146,24 @@ try6 <- try5 %>%
 
 ```
 
+Let's experiment with interval join on actual health_df data:
+
+one month took 1.3 seconds
+five months took 4,.2 seconds
+
+```{r}
+system.time(
+try1 <- health_df %>% 
+  # filter(year(start_date) == 2019, month(start_date)  >= 6) %>% 
+  filter(start_date >= earliest_watch_data) %>% 
+  mutate(start = start_date, end = end_date, 
+    end = if_else(type == "HKQuantityTypeIdentifierHeartRate", end + seconds(1), end)) %>%   
+  filter(end > start) %>% 
+  interval_left_join(
+    workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned,
+                  duration) %>%
+      mutate(workout_length = as.numeric(end) - as.numeric(start)) %>% 
+      filter(end > start))
+)
+```
+

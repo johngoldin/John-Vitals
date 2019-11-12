@@ -37,6 +37,8 @@ system.time(health_xml <- read_xml("~/Downloads/apple_health_export/export.xml")
 ```{r}
 # xml_find_first takes 22 seconds on my MacBook Pro
 system.time(n1 <- xml_find_first(health_xml, "./ExportDate"))
+system.time(n1 <- xml_find_first(health_xml, "./HKMetadataKeyTimeZone"))
+HKMetadataKeyTimeZone
 export_date <- xml_attr(n1, "value")
 
 system.time(node_me <- xml_find_first(health_xml, ".//Me"))

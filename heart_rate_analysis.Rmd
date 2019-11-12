@@ -64,13 +64,14 @@ distance <- df %>%
 ```
 ```{r create_plot, echo = FALSE}
 plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL) {
+  print(hour_max)
   adf <- adf %>% filter(type == "HKQuantityTypeIdentifierHeartRate", date %in% adate) %>%
-    arrange(startDate)
-  if (!is.null(hour_max)) adf <- adf %>% filter(hour(startDate) <= hour_max)
-  if (!is.null(hour_min)) adf <- adf %>% filter(hour(startDate) >= hour_min)
-  p <- ggplot(data = adf, aes(x = startDate, y = value))
+    arrange(start_date)
+  if (!is.null(hour_max)) adf <- adf %>% filter(hour(start_date) <= hour_max)
+  if (!is.null(hour_min)) adf <- adf %>% filter(hour(start_date) >= hour_min)
+  p <- ggplot(data = adf, aes(x = start_date, y = value))
   if (events) {
-    base <- adf$startDate[10]
+    base <- adf$start_date[10]
     left_house <- base
     hour(left_house) <- 5
     minute(left_house) <- 55
@@ -88,19 +89,33 @@ plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NUL
 }
 ```
 
+
+https://www.cnn.com/2019/03/16/health/apple-watch-heart-rate-arrhythmia-afib-study/index.html
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6111985/
+
+```{r}
+plot_day(health_df, ymd("2019-02-15"), events = TRUE, hour_min = 1, hour_max = 2) %>% print()
+
+# health_df %>% filter(as_date(start_date) ==  ymd("2019-02-16")) %>% arrange(start_date) %>% View()
+```
+
+
+
+
+
 ```{r anomalous_readings, echo = FALSE, eval = FALSE}
-df <- df  %>% filter(type == "HKQuantityTypeIdentifierHeartRate", startDate >= ymd("2017-10-01")) 
+df <- df  %>% filter(type == "HKQuantityTypeIdentifierHeartRate", start_date >= ymd("2017-10-01")) 
 above145 <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRate", value >= 145 ) %>%
-  arrange(startDate) %>%
-  select(startDate, value, dayofweek, hour, date, type, year)
+  arrange(start_date) %>%
+  select(start_date, value, dayofweek, hour, date, type, year)
 table(above145$date)
 plot_day(df, "2019-02-02") %>% print()
 
 above145_night <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRate", value >= 145,
                                 (as.numeric(hour) <= 6) | (as.numeric(hour) >= 23)) %>%
                                 # (hour <= 6) ) %>%
-  arrange(startDate) %>%
-  select(startDate, value, dayofweek, hour, date, type, year)
+  arrange(start_date) %>%
+  select(start_date, value, dayofweek, hour, date, type, year)
 # This gives us four dates, one of which is 2/15/2019.
 ```
 

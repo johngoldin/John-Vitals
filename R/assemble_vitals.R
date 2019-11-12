@@ -1,5 +1,6 @@
 library(PerformanceAnalytics)
 
+type_levels <- ""
 
 df_resting_hr <- health_df %>% filter(type == "HKQuantityTypeIdentifierRestingHeartRate") %>%
   mutate(start_hour = hour(start_date), end_hour = hour(end_date),

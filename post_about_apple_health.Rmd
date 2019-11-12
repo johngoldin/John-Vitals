@@ -18,10 +18,15 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 This post will work through the mechanics of moving data from the Apple Health app
-out of your iPhone and into R where you can analyze it. Next it will offer some
+out of your iPhone and into R where you can analyze it. It will dig into the details
+of what is in the export data. It will describe in detail the problem of 
+adjusting the time stamps for daylight savings time and travel across time zones.
+Next it will offer some
 tips on how to prepare and clean up the data a bit. Finally, it will 
 explore some of the properties of the types of data available
-via the Health app.
+via the Health app. As an example of how one might use the data,
+the heart rate data is used to flesh out the description of a visiting to an
+emergency room.
 
 ##### First, export the data from the Health app
 
@@ -66,7 +71,7 @@ via email or Dropbox.
 The exported file is named `export.zip`. If you double-click on that file it 
 will expand into a folder called `apple_health_export`. The uncompressed file is huge
 in comparison with the size of the zip file. In my case, `export.zip` is about
-79 megabytes while the `apple_health_export` folder is 2.45 gigabytes!
+79 megabytes which becomes an `apple_health_export` folder that is 2.45 gigabytes!
 In my R code, I uncompress the file into my Downloads folder, which is excluded
 from my Time Machine backups.
 
@@ -77,25 +82,27 @@ basic steps to import it into R. I'm following in the footsteps of
 several people who have published code to accomplish these steps.
 See  work by [Ryan Praskievicz](https://gist.github.com/ryanpraski/ba9baee2583cfb1af88ca4ec62311a3d), [Taras Kaduk](https://taraskaduk.com/2019/03/23/apple-health/), [Raul Eulogio](https://www.inertia7.com/projects/149), and [Deepankar Datta](https://github.com/deepankardatta/AppleHealthAnalysis) (who has
 created a package called AppleHealthAnalysis). I'm sure there are other examples
-using R, and there are quite a number of examples using python (e.g., by [Mark Koester](http://www.markwk.com/data-analysis-for-apple-health.html).
+using R, and there are quite a number of examples using python (e.g., by [Mark Koester](http://www.markwk.com/data-analysis-for-apple-health.html)).
 
-The R code uncompresses the zip file and replaces the `apple_health_export` folder. The
-big file inside that folder is `export.xml`. We
+The R code uncompresses the zip file and replaces the `apple_health_export` folder.
+(Because of the size of this folder, I try to avoid having multiple copies and also
+avoid having it saved to my disk backup.)
+The big file inside that folder is `export.xml`. Following the examples sited above, I
 use the XML package to covert the major elements of the XML file into
 tidy data frames.
 
-```{r load_libraries}
+```{r load_libraries, messages = FALSE, warnings = FALSE}
 library(tidyverse, quietly = TRUE)
 #library(jsonlite, quietly = TRUE)
 library(lubridate, quietly = TRUE)
 library(XML, quietly = TRUE)
 library(knitr)
-library(kableExtra)
-library(PerformanceAnalytics)
-library(janitor)
-library(scales)
+library(kableExtra) 
+library(PerformanceAnalytics) # to get correlation matrix
+library(janitor) # so that I an use the tabyl function
+library(scales) # to help format some tabular data
 ```
-```{r import_xml, echo = TRUE, cache = TRUE, message = FALSE}
+```{r import_xml, echo = TRUE, cache = TRUE, messages = FALSE}
 rc <- unzip("~/Downloads/export.zip", exdir = "~/Downloads", overwrite = TRUE)
 if (length(rc) != 0) file.remove("~/Downloads/export.zip")
 # once unzipped, delete export.zip. Otherwise, the next time Air Drop sends export.zip
@@ -122,8 +129,8 @@ will provide all that you are looking for. My expanded Apple Health Export
 folder also includes workout GPX files, electrocardiograms, and clinical
 records imported from my physician's medical records system.
 
-I have a bit over two years of Apple Watch data in my iPhone. There is a lot of
-data in the Apple Health Export. In fact, after a full career working
+I have a bit over two years of Apple Watch data in my iPhone. 
+After a full career working
 as a data analyst, this is the largest number of data points
 I have ever dealt with. Extracting the "Record" data  from `export.xml` produces
 3.4 million rows and takes about 70 seconds on my 2019 iMac. 
@@ -142,7 +149,7 @@ health_df2 %>%
   janitor::adorn_totals("col") %>%  arrange(desc(Total)) %>% 
   janitor::adorn_totals("row") %>% # do column total after arrange
   kable(format.args = list(decimal.mark = " ", big.mark = ","),
-        caption = "Frquency by Type and Data Source", format = "markdown") %>% 
+        caption = "Frequency by Type and Data Source", format = "markdown") %>% 
   clipr::write_clip(allow_non_interactive = TRUE) %>% print()
 
 ```
@@ -202,7 +209,7 @@ here because I can view it via the Apple Health app.
 
 ### The Problem of Time Zones and Daylight Savings
 
-When I first ttried to look at day by day data for resting heart rate I bumped into
+When I first looked at day by day data for resting heart rate I bumped into
 problems cause by the issue of time zones. I have about 745 rows of data of type
 `HKQuantityTypeIdentifierRestingHeartRate` which should be one per day. 
 I quickly discovered I had several days where there were two values in a single day, 
@@ -221,7 +228,7 @@ is because as I write this local time is Eastern Daylight Savings which is four 
 earlier than UTC (universal
 time code). At first I thought that time code info would take care of everything. 
 In fact, it is useless.
-As near as I can tell, the internal data has no indication of time zone. 
+As near as I can tell, the internal data has no indication of time zone. [^1]
 The UTC offset is attached to the datetime information when the data is exported. 
 Ever single time stamp in the exported dataset has the same "-0400" offset,
 which merely represent my local offset at the time the export was done. 
@@ -241,10 +248,12 @@ at 09:51:58 local time.
 If I went back to look at the same workout after the change from daylight savings to standard
 time, it would appear as 04:51:58 rather than 05:51:58.
 
+[^1]: The documentation for the Apple Health Kit does offer a way for developers to store [time zone meta data](https://developer.apple.com/documentation/healthkit/hkmetadatakeytimezone?language=objc) via the `HKMetadataKeyTimeZone` object. It appears that [not even Apple uses this feature](https://stackoverflow.com/questions/49250964/hkmetadatakeytimezone-is-always-nil-for-health-data-which-is-created-by-apples). And the Apple documentation only suggests using it for sleep data. It would be impractical to try to attach this meta data to every single observation.
+
 When does this matter? 
 With a multi-time-zone shift, it's not hard to end up with datetime stamps that appear in
 the wrong day. 
-Compounding the problem is that things like resting heart rate are not always
+Compounding the problem is that items such as resting heart rate are not always
 saved in the data at the same hour of the day. 
 A number of items like resting heart rate are recorded once per day.
 But because of time zone issues, you can end up with two on one day and none on another. 
@@ -252,7 +261,7 @@ Also, there may be situations where you want to look at patterns over the course
 At one point I wanted to look at whether there were periods when my heart rate was 
 unusually high during normal sleeping hours. 
 I looked for a heart rate above 120 between the hours of 11PM and 6AM. 
-I got hits for when I was hiking in England or Greece because the 
+I got hits for when I was hiking in a different time zone because the 
 datetime stamp appeared to be during those night time hours when in fact the local time
 was shifted five or seven hours because of the different time zone.
 
@@ -265,7 +274,7 @@ specifies the time zone.
 The trick is that the time zone is stored as an **attribute** of the vector 
 rather than as part of the data. 
 If you have a vector of `datetime` data, 
-the time zone attribute applies to the entire vector, not  to individual elements
+the time zone attribute applies to the entire vector, not to individual elements
 in the vector. 
 If you want to store time zones that vary within the vector, you need to store them in a separate
 vector, and that's not part of the R standard for handling dates and times. 
@@ -289,11 +298,15 @@ There are a number of tips out there for activity tracking in the face of
 
 Here I describe a solution to the time zone issue, but it is not very elegant.
 
-First I wrote a function  `get_my_time_zone` that identifies in what time zone I was 
+First I wrote a function `get_my_time_zone` that identifies in what time zone I was 
 located during the two year period for which I need time zone info to interpret watch data. The
 function hard codes when I landed in a different time zone and therefore changed
-the time zone on my watch. That's the aspect of this solution that is not very elegant.
+the time zone on my watch. That's the aspect of this solution that is not very elegant. 
+The function hard codes my personal travel history. It will only work for me.[^2] If I
+travel across a time zone I need to remember to edit the function with my travel details.
 
+[^2]: It might be possible to use the Tripit API to get flight information that could be used in the `get_my_time_zone` function.
+ 
 ```{r clean_up_time_zones}
 get_my_time_zone <- function(dt) {
   # What I'm going for is the time zone used by my watch. 
@@ -316,9 +329,6 @@ get_my_time_zone <- function(dt) {
 }
 get_my_time_zone <- compiler::cmpfun(get_my_time_zone)
 ```
-
-
-
 
 Next I need to use `lubridate` functions to adjust the Apple Health export 
 time stamps so that the hour corresponds to the local time I actually experienced.
@@ -349,7 +359,9 @@ That way the function is vectorized for each group and is reasonably fast.
 I have to group the time zones separately for the start date and the end date. Usually
 they would be in the same tine zone, but that's not something I can count on. I
 also calculate `span` to be the time between the start_date and the end_date. We
-will see below how that can be an important diagnostic tool.
+will see below how that can be an important diagnostic tool. For heart rate readings
+the start and the end time are the same. For that data item, `span` records the amount
+of time since the last reading was recorded, using the `lag` function.
 
 ```{r adjust_time_stamps, cache = TRUE}
 system.time(
@@ -359,13 +371,20 @@ system.time(
            creationDate = as_datetime(str_sub(creationDate, 1, 19)),
            start_time_zone = get_my_time_zone(startDate)) %>% 
     group_by(start_time_zone) %>% 
-    mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>% 
-    mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
-    group_by(end_time_zone) %>% 
-    mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
+    # assume end_date is in the same time zone as start_date
+    mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone)),
+           end_date = UTC_to_clock_by_tz(endDate, first(start_time_zone))) %>% 
+    # mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
+    # group_by(end_time_zone) %>% 
+    # mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
     ungroup() %>% 
-    mutate(span = as.numeric(end_date - start_date)) %>% 
-    select(-startDate, -endDate)
+    mutate(date = as_date(start_date), hour = hour(start_date)) %>% 
+    arrange(type, start_date) %>% 
+    mutate(span = case_when(
+      (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
+      TRUE ~ as.numeric(end_date) - as.numeric(start_date)),
+    ) %>% 
+    select(-startDate, -endDate) # I don't need the character datetime stamp anymore
 )
 # Here I'll adjust time for workout_df as well
 workout_df <- workout_df %>% 
@@ -374,14 +393,14 @@ workout_df <- workout_df %>%
          creationDate = as_datetime(str_sub(creationDate, 1, 19)),
          start_time_zone = get_my_time_zone(startDate)) %>% 
   group_by(start_time_zone) %>% 
-  mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone))) %>% 
-  mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
-  group_by(end_time_zone) %>% 
-  mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
+  mutate(start_date = UTC_to_clock_by_tz(startDate, first(start_time_zone)),
+         end_date = UTC_to_clock_by_tz(endDate, first(start_time_zone))) %>% 
+  # mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
+  # group_by(end_time_zone) %>% 
+  # mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
   ungroup() %>% 
-  mutate(span = as.numeric(end_date - start_date)) %>% 
   select(-startDate, -endDate)
-# I'm going to focus on health_df, but I could adjust times in the other df's as well
+# I'm going to focus on health_df and workout_df, but I could adjust times in the other df's as well
 ```
 
 Save some stuff so that I can skip the slow steps above:
@@ -393,24 +412,137 @@ save(health_xml, health_df, activity_df, workout_df, clinical_df, file = "interi
 ```
 
 
-### Focusing on Specific Types of Data
+### Focusing on Items That Vary Within a Day
 
 First let's focus on items where where multiple measurements are taken over the
 course of the day. A prime example is heart rate, which records the pulse at
-a partikcular point in time. But there are a number of items
-where a quantity is accumulated over a short span of time, for example: steps taken, 
+a particular point in time. But there are a number of items
+where a quantity is accumulated over a short span of time: steps taken, 
 distance traveled, energy burned, flights climbed, period of exercise. All of these
 have to do with movement and, as we'll see, are higly correlated.
 
 Each measurement for these items has a start time stamp and an end time stamp. In
 R terms the time stamp is a `datetime` class. We have already spent a lot
-of effort on correcting these datetime stamps for movements across time zones.
+of effort correcting these datetime stamps for movements across time zones and daylight savings.
 Next, let's examine these measurements in more detail. We have already 
 calculated an item called `span` which is the difference between the start and
 end of the measurement period in seconds. This provides some useful diagnostic
 information about the nature of the measurements.
 
-```{r examine_span}
+Most of these movement mesurements cover a time span of five seconds or less. They 
+are created very frequently. The table below shows the number of measurements broken 
+down by the span of time which the measurement covers. For example, the row that shows
+steps is nut the total number of steps, it is the number of times a step measurement is
+saved (where each measurement probably counts more than one step). There are a lot of 
+measurements that cover a period less than a minute. The watch (and phone) are being very
+busy saving separate measurements.
+
+```{r examine_span, cache = TRUE}
+earliest_watch_data <- min(health_df$start_date[str_detect(health_df$sourceName, "Watch")], na.rm = TRUE)
+movement <- health_df %>% 
+  filter(as_date(start_date) >= ymd("2017-10-03"),
+    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+                     "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",
+                      "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierAppleExerciseTime",
+                     "HKQuantityTypeIdentifierHeartRate"),
+         (str_detect(sourceName, "Watch") | str_detect(sourceName, "Phone"))) %>% 
+  mutate(type = case_when(
+    type == "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active_Energy",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Walking_Phone",
+    (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Walking_Watch",
+    type == "HKQuantityTypeIdentifierDistanceCycling" ~ "Cycling",
+    (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Phone")  ~ "Climb_Phone",
+    (type == "HKQuantityTypeIdentifierFlightsClimbed") & str_detect(sourceName, "Watch")  ~ "Climb_Watch",
+    (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Phone") ~ "Steps_Phone",
+     (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Watch") ~ "Steps_Watch",
+    (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Phone") ~ "Exercise_Phone",
+    (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Watch") ~ "Exercise_Watch",
+    type == ("HKQuantityTypeIdentifierHeartRate")  & str_detect(sourceName, "Watch")~ "Heart_Rate"
+  ),
+  hour = hour(start_date), date_start = (as_date(start_date)),
+  span2 = case_when(
+    span <= 30 ~ "<=0.5",
+    span <= (2 * 60) ~ "0.5-2",
+    span <= (10 * 60) ~ "2-10",
+    span <= (30*60) ~ "10-30",
+    span <= (30*60) ~ "30-60",
+    TRUE ~ ">60"
+  ),
+  span2 = factor(span2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" ))) %>% 
+  # next we will use interval_left_join to get workout info
+  mutate(start = start_date, end = end_date, 
+    end = if_else(type == "HKQuantityTypeIdentifierHeartRate", end + seconds(1), end)) %>%   
+  filter(end > start) %>% 
+  interval_left_join(
+    workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned,
+                  duration) %>%
+      mutate(workout_length = as.numeric(end) - as.numeric(start)) %>% 
+      filter(end > start))
+# movement %>% 
+#  janitor::tabyl(type, span2) %>% 
+#   kable(format.args = list(decimal.mark = " ", big.mark = ","),
+#         caption = "Size of Interval (in Minutes)", format = "markdown") %>% 
+#   clipr::write_clip(allow_non_interactive = TRUE) %>% print()
+```
+```{r count_measurements}
+try4 <- movement %>% 
+  filter(type %in% c("Active Energy", "Heart Rate", "Basal Energy", 
+                      "Steps Watch", "Distance Watch")) %>% 
+  mutate(group = case_when(
+           !is.na(workoutActivityType) ~ "Workout",
+           (hour > 23) | (hour < 5) ~ "Sleep",
+           TRUE ~ "Day")) %>% 
+  group_by(date_start, group) %>% 
+  summarise(Active_Energy = sum(type == "Active Energy"),
+            Basal_Energy = sum(type == "Basal Energy"),
+             Heart_Rate = sum(type == "Heart Rate"),
+            Steps = sum(type == "Steps Watch"),
+            Distance = sum(type == "Distance Watch"),
+           ) %>% 
+  left_join(workout_by_date, by = c("date_start" = "date"))
+try5 <- try4 %>% 
+  mutate(
+    workout_minutes = ifelse(is.na(workout_minutes), 0.0, workout_minutes),
+    denom = case_when(
+      group == "Sleep" ~ 6 * 60,
+      group == "Day" ~ (18 * 60) - workout_minutes,
+      group == "Workout" ~ workout_minutes
+    ),
+    ae = denom / Active_Energy, be = denom / Basal_Energy, 
+    hr = denom / Heart_Rate, steps = denom /Steps, dist = denom / Distance) 
+try6 <- try5 %>% 
+  group_by(group) %>% 
+  select(group, ae, be, hr, dist) %>% 
+  summarise_all(mean, na.rm = TRUE)
+```
+
+Spoiler alert: if you explicitly start a workout on the watch 
+measurements are taken much more frequently. 
+As a result the pattern of frequency of measurments
+is dramatically different depending on whether or not a workout is in progress.
+It doesn't makes sense to examine frequency of measurement
+without identifying whether measurements happened during a workout.
+
+It's tricky to identify which measurements were
+taken during workouts. We have to combine the health_df table with the workouts table. For
+each workout there is a start and an end time. Next I will join the `health_df` table
+with the `workout_df` table. A normal `dplyr` join such as `left_join` won't work because 
+we don't have exact matches.
+We want to know whether each row in `health_df` is within the range of
+the start and end time of any of the workouts.
+
+To do that I used the [fuzzyjoin package](https://github.com/dgrtwo/fuzzyjoin) by Dave Robinson.
+It provides a variety of special joins that do not rely on an exact match.
+In our case, we will use the `interval_left_join` function which joins tables based
+on overlapping intervals. The help for interval_left_join explains that this function requires
+the IRanges package available from Bioconductor and points to 
+[instructions for installation](https://bioconductor.org/packages/release/bioc/html/IRanges.html).
+This was the first time I have used anything from the Bioconductor repository. I'm
+impressed by the speed of `interval_left_join`. I thoght it would be impractical to run it
+on the full dataset, but it took less than 10 seconds to join 434 workouts to 3.3 million
+rows in the health_df table.
+
+```{r}
 
 ```
 

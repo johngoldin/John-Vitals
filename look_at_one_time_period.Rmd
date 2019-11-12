@@ -1,0 +1,42 @@
+---
+title: "look_at_one_time_period.Rmd"
+output: html_notebook
+---
+
+At 15:49 on 2019-11-07, sat down on sofa. Took blood pressure at 15:58 and observed pulse of 67.
+At 16:04 got heart reading on watch.
+At 16:17 went downstairs very actively.
+At 16:19 back upstairs
+
+
+```{r}
+spell <- health_df %>% 
+  filter(start_date >= ymd_hm("2019-11-07 15:48"), start_date <= ymd_hm("2019-11-07 16:30"))
+```
+
+
+```{r}
+
+
+hr <- health_df %>% 
+  filter((type == "HKQuantityTypeIdentifierHeartRate") & str_detect(sourceName, "Watch"))%>% 
+  select(type, value, start_date, end_date, span, date, hour)
+night <- hr %>% 
+  filter((hour > 23) | (hour < 6))
+```
+
+
+
+```{r}
+system.time(
+  health_df2 <- health_df %>% arrange(start_date) %>% tail(10000) %>% 
+    ungroup() %>% 
+    arrange(type, start_date) %>% 
+    mutate(span = case_when(
+      (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
+      TRUE ~ as.numeric(end_date) - as.numeric(start_date)),
+      s1 = as.numeric(start_date), s2 = as.numeric(last(start_date))
+    )
+)
+```
+
