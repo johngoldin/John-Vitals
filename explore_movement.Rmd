@@ -5,15 +5,18 @@ output: html_notebook
  
 
 ```{r filter_movement}
+earliest_watch_data <- min(health_df$start_date[str_detect(health_df$sourceName, "Watch")], na.rm = TRUE)
+# pick out the intra-day movement items plus heart rate
 movement <- health_df %>% 
   filter(as_date(start_date) >= ymd("2017-10-03"),
-    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierBasalEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
                      "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",
                       "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierAppleExerciseTime",
-                     "xHKQuantityTypeIdentifierHeartRate"),
+                     "HKQuantityTypeIdentifierHeartRate"),
          (str_detect(sourceName, "Watch") | str_detect(sourceName, "Phone"))) %>% 
   mutate(type = case_when(
     type == "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active_Energy",
+    type == "HKQuantityTypeIdentifierBasalEnergyBurned" ~ "Basal_Energy",
     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Walking_Phone",
     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Walking_Watch",
     type == "HKQuantityTypeIdentifierDistanceCycling" ~ "Cycling",
@@ -23,18 +26,45 @@ movement <- health_df %>%
      (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Watch") ~ "Steps_Watch",
     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Phone") ~ "Exercise_Phone",
     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Watch") ~ "Exercise_Watch",
-    type == "HKQuantityTypeIdentifierHeartRate" ~ "Heart_Rate"
+    type == ("HKQuantityTypeIdentifierHeartRate")  & str_detect(sourceName, "Watch") ~ "Heart_Rate"
   ),
   hour = hour(start_date), date_start = (as_date(start_date)),
   span2 = case_when(
-    span <= (5 * 60) ~ "<= 5",
-    span <= (10 * 60) ~ "5-10",
-    span <= (20*60) ~ "10-20",
-    span <= (40*60) ~ "20-40",
-    span <= (60*60) ~ "40-60",
+    span <= 30 ~ "<=0.5",
+    span <= (2 * 60) ~ "0.5-2",
+    span <= (10 * 60) ~ "2-10",
+    span <= (30*60) ~ "10-30",
+    span <= (30*60) ~ "30-60",
     TRUE ~ ">60"
   ),
-  span2 = factor(span2, levels = c("<= 5", "5-10", "10-20", "20-40", "40-60", ">60" )))
+  Version = case_when(
+    str_detect(sourceName, "Phone") ~ "Phone",
+    str_detect(sourceVersion, "[0-9]\\.") ~ paste0("Version ", str_sub(sourceVersion, 1, 1)),
+    TRUE ~ "Other"),
+  # span2 is range of intervals (in minutes rather than in seconds)
+  span2 = factor(span2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" ))) %>% 
+  # next we will use interval_left_join to get workout info
+  # interval_join doesn't work unless the end_date is greater than the start_date, 
+  # so add one second to the end_date of the heart rate measurements.
+  mutate(start = start_date, end = end_date, 
+    end = if_else(type == "Heart_Rate", end + seconds(1), end)) %>%   
+  filter(end > start) %>% 
+  interval_left_join(
+    workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned) %>%
+      filter(end > start)) %>% 
+  mutate(group = case_when(
+           !is.na(workoutActivityType) ~ "Workout",
+           (hour > 23) | (hour < 6) ~ "Sleep",
+           TRUE ~ "Day"))
+
+# get workout length by day
+workout_length <- workout_df %>% filter(str_detect(sourceName, "Watch")) %>% 
+  mutate(date_start = as_date(start_date), workout_length = as.numeric(duration), 
+         workout_energy = as.numeric(totalEnergyBurned), workout_distance = as.numeric(totalDistance)) %>% 
+  group_by(date_start) %>% 
+  summarize(workout_length = sum(workout_length, na.rm = TRUE), workout_energy = sum(workout_energy, na.rm = TRUE),
+            workout_distance = sum(workout_distance, na.rm = TRUE)) %>% 
+  ungroup()
 ```
 
 ```{r span_size}
@@ -52,6 +82,29 @@ movement2 <- movement %>% mutate(year = year(start_date)) %>%
 movement2 %>% select(p50)
 ```
 
+
+
+watchOS 5.0.1
+This update contains improvements and bug fixes, including:
+Fixes an issue that caused a small number of users to see an increase in exercise minutes
+Addresses an issue that caused some users to not receive Stand credit in the afternoon
+version
+
+5.1.2  Can indicate whether your heart rhythm shows signs of atrial fibrillation—a serious form of irregular heart rhythm—or sinus rhythm, which means your heart is beating in a normal pattern
+
+
+Heart Rate
+Option to be notified if your heart rate falls below a specified threshold while you appeared to be inactive for a 10-minute period
+Heart Rate measurements including resting rate, walking average, and recovery rate shown on the Siri watch face
+
+
+
+  Version   version_date
+  <chr>     <date>      
+1 Phone     2017-10-03  
+2 Version 4 2017-10-03  
+3 Version 5 2018-09-22  
+4 Version 6 2019-09-20  
 
 ```{r trim_outliers}
 hr_by_hour = health_df %>% 
@@ -96,3 +149,51 @@ summary(tt$hr_readings)
    
 Median is 13 and interquartile range goes from 12 to 15.  At 13 readings per hour, that's an average of one
 reading per 4.6 minutes. I'd say that in general the watch takes a he
+
+
+
+```{r}
+# let's focus on frequency of movement measurements (and heart rate)
+movement2 <- movement %>% 
+  filter(type %in% c("Active_Energy", "Heart_Rate", "Basal_Energy", 
+                      "Steps_Watch", "Walking_Watch", "Steps_Phone", "Walking_Phone")) %>% 
+  group_by(Version, date_start, group) %>% 
+  summarise(Active_Energy = sum(type == "Active_Energy"),
+            Basal_Energy = sum(type == "Basal_Energy"),
+             Heart_Rate = sum(type == "Heart_Rate"),
+            Steps = sum(type == "Steps_Watch"),
+            Distance = sum(type == "Walking_Watch"),
+            Steps_Phone = sum(type == "Steps_Phone"),
+            Distance_Phone = sum(type == "Walking_Phone"),
+            Basal_Minutes = sum(span, na.rm = TRUE) / 60
+          ) %>% 
+  left_join(workout_length  %>% mutate(group = "Workout"), by = c("date_start", "group"))
+
+items_per_minute <- movement2 %>% 
+  mutate(
+    workout_minutes = ifelse(is.na(workout_length), 0.0, workout_length),
+    year = year(date_start),
+    period_minutes = case_when(
+      group == "Sleep" ~ 6 * 60,
+      # used 17.5 hours in formula below to allow for half hour of charging
+      group == "Day" ~ (17.5 * 60) - workout_minutes,
+      group == "Workout" ~ workout_minutes
+    ),
+    `Active Energy rate` = if_else(Active_Energy > 0, Active_Energy / period_minutes, NA_real_), 
+    `Basal Energy rate` = if_else(Basal_Energy > 0, Basal_Energy / period_minutes, NA_real_), 
+    `Pulse readings` = if_else(Heart_Rate > 0, Heart_Rate / period_minutes, NA_real_), 
+    `Steps (watch) rate` = if_else(Steps > 0, Steps / period_minutes, NA_real_),
+    `Steps (phone) rate` = if_else(Steps_Phone > 0, Steps_Phone / period_minutes, NA_real_),
+    `Distance rate` = if_else(Distance > 0, Distance / period_minutes, NA_real_),
+    `Active Energy basal` = if_else(Active_Energy > 0, Active_Energy / Basal_Minutes, NA_real_), 
+    `Basal Energy basal` = if_else(Basal_Energy > 0, Basal_Energy / Basal_Minutes, NA_real_), 
+    `Pulse readings basal` = if_else(Heart_Rate > 0, Heart_Rate / Basal_Minutes, NA_real_), 
+    `Steps (watch) basal` = if_else(Steps > 0, Steps / Basal_Minutes, NA_real_),
+    `Distance rate basal` = if_else(Distance > 0, Distance / Basal_Minutes, NA_real_)) 
+
+rate_table_basal <- items_per_minute %>% 
+  group_by(Version, group) %>% 
+  select(Version, group, `Active Energy basal`, `Basal Energy basal`, `Pulse readings basal`, `Distance rate basal`, `Steps (watch) basal`) %>% 
+  summarise_all(median, na.rm = TRUE)
+```
+

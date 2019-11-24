@@ -414,40 +414,73 @@ save(health_xml, health_df, activity_df, workout_df, clinical_df, file = "interi
 
 ### Focusing on Items That Vary Within a Day
 
-First let's focus on items where where multiple measurements are taken over the
+There are a set of items where multiple measurements are made during the
 course of the day. A prime example is heart rate, which records the pulse at
-a particular point in time. But there are a number of items
+a particular point in time. There also are a number of items
 where a quantity is accumulated over a short span of time: steps taken, 
 distance traveled, energy burned, flights climbed, period of exercise. All of these
 have to do with movement and, as we'll see, are higly correlated.
 
-Each measurement for these items has a start time stamp and an end time stamp. In
+Each measurement for the movement items has a start time and an end time. In
 R terms the time stamp is a `datetime` class. We have already spent a lot
-of effort correcting these datetime stamps for movements across time zones and daylight savings.
-Next, let's examine these measurements in more detail. We have already 
+of effort correcting these datetime stamps for travel across time zones and for daylight savings.
+Next, let's examine these measurements in more detail. We 
 calculated an item called `span` which is the difference between the start and
 end of the measurement period in seconds. This provides some useful diagnostic
 information about the nature of the measurements.
 
-Most of these movement mesurements cover a time span of five seconds or less. They 
+**Most of these movement mesurements cover a time span of five seconds or less. They 
 are created very frequently. The table below shows the number of measurements broken 
 down by the span of time which the measurement covers. For example, the row that shows
 steps is nut the total number of steps, it is the number of times a step measurement is
 saved (where each measurement probably counts more than one step). There are a lot of 
 measurements that cover a period less than a minute. The watch (and phone) are being very
-busy saving separate measurements.
+busy saving separate measurements.**
 
-```{r examine_span, cache = TRUE}
+I wanted to look at how frequently measurements are taken. I realized that I needed to consider
+whether measurements were taken during a workout. 
+A **workout** is a feature of the Apple Watch. You start a 
+workout to record a period of physical activity and specify the type of activity. After
+you indicate that the workout is finished, Apple provides a summary of the activity (and
+saves that summary information in `activity_df`). You can view the summaries of your
+workouts via the Activity app on the
+During a workout, the watch records measurements much more frquently. 
+It doesn't makes sense to examine how frequently measurements are made
+without considering whether or not they occur during a workout. 
+
+It's tricky to identify which measurements were
+taken during workouts. We have to combine the `health_df` table with the `actiity_df` table. For
+each workout there is a start and an end time. I need to join the `health_df` table
+with the `workout_df` table. A normal `dplyr` join such as `left_join` won't work because 
+we don't have exact matches.
+We want to know whether each row in `health_df` is within the range of
+the start and end time of any of the workouts.
+
+To relate measurements to particular workouts, I used the 
+[fuzzyjoin package](https://github.com/dgrtwo/fuzzyjoin) by Dave Robinson.
+It provides a variety of special joins that do not rely on an exact match.
+In this case, we will use the `interval_left_join` function which joins tables based
+on overlapping intervals. The help for interval_left_join explains that this function requires
+the IRanges package available from Bioconductor and points to 
+[instructions for installation](https://bioconductor.org/packages/release/bioc/html/IRanges.html).
+This was the first time I have used anything from the Bioconductor repository. I'm
+impressed by the speed of `interval_left_join`. I thought it would be impractical to run it
+on the full dataset, but it took less than 10 seconds to join 434 workouts to 3.3 million
+rows in the health_df table.
+
+```{r examine_span, cache = TRUE, echo = FALSE}
 earliest_watch_data <- min(health_df$start_date[str_detect(health_df$sourceName, "Watch")], na.rm = TRUE)
+# pick out the intra-day movement items plus heart rate
 movement <- health_df %>% 
   filter(as_date(start_date) >= ymd("2017-10-03"),
-    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+    type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierBasalEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
                      "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",
                       "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierAppleExerciseTime",
                      "HKQuantityTypeIdentifierHeartRate"),
          (str_detect(sourceName, "Watch") | str_detect(sourceName, "Phone"))) %>% 
   mutate(type = case_when(
     type == "HKQuantityTypeIdentifierActiveEnergyBurned" ~ "Active_Energy",
+    type == "HKQuantityTypeIdentifierBasalEnergyBurned" ~ "Basal_Energy",
     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Phone") ~ "Walking_Phone",
     (type == "HKQuantityTypeIdentifierDistanceWalkingRunning") & str_detect(sourceName, "Watch") ~ "Walking_Watch",
     type == "HKQuantityTypeIdentifierDistanceCycling" ~ "Cycling",
@@ -457,7 +490,7 @@ movement <- health_df %>%
      (type == "HKQuantityTypeIdentifierStepCount") & str_detect(sourceName, "Watch") ~ "Steps_Watch",
     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Phone") ~ "Exercise_Phone",
     (type == "HKQuantityTypeIdentifierAppleExerciseTime") & str_detect(sourceName, "Watch") ~ "Exercise_Watch",
-    type == ("HKQuantityTypeIdentifierHeartRate")  & str_detect(sourceName, "Watch")~ "Heart_Rate"
+    type == ("HKQuantityTypeIdentifierHeartRate")  & str_detect(sourceName, "Watch") ~ "Heart_Rate"
   ),
   hour = hour(start_date), date_start = (as_date(start_date)),
   span2 = case_when(
@@ -468,81 +501,134 @@ movement <- health_df %>%
     span <= (30*60) ~ "30-60",
     TRUE ~ ">60"
   ),
+  # span2 is range of intervals (in minutes rather than in seconds)
   span2 = factor(span2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" ))) %>% 
   # next we will use interval_left_join to get workout info
+  # interval_join doesn't work unless the end_date is greater than the start_date, 
+  # so add one second to the end_date of the heart rate measurements.
   mutate(start = start_date, end = end_date, 
-    end = if_else(type == "HKQuantityTypeIdentifierHeartRate", end + seconds(1), end)) %>%   
+    end = if_else(type == "Heart_Rate", end + seconds(1), end)) %>%   
   filter(end > start) %>% 
   interval_left_join(
-    workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned,
-                  duration) %>%
-      mutate(workout_length = as.numeric(end) - as.numeric(start)) %>% 
-      filter(end > start))
+    workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned) %>%
+      filter(end > start)) 
+  # get workout length by day
+workout_length <- workout_df %>% filter(str_detect(sourceName, "Watch")) %>% 
+  mutate(date_start = as_date(start_date), workout_length = as.numeric(duration), 
+         workout_energy = as.numeric(totalEnergyBurned), workout_distance = as.numeric(totalDistance)) %>% 
+  group_by(date_start) %>% 
+  summarize(workout_length = sum(workout_length, na.rm = TRUE), workout_energy = sum(workout_energy, na.rm = TRUE),
+            workout_distance = sum(workout_distance, na.rm = TRUE)) %>% 
+  ungroup()
+movement <- movement %>% 
+  left_join(workout_length, by = "date_start") %>% 
+  mutate(group = case_when(
+           !is.na(workoutActivityType) ~ "Workout",
+           (hour > 23) | (hour < 6) ~ "Sleep",
+           TRUE ~ "Day"))
+
+# movement %>% mutate(span_minutes = span / 60, wday = wday(start_date, label = TRUE)) %>% filter((type == "Active_Energy"), span_minutes > (15)) %>% select(sourceVersion, start_date, end_date, span_minutes, wday) %>% View()
+
 # movement %>% 
 #  janitor::tabyl(type, span2) %>% 
 #   kable(format.args = list(decimal.mark = " ", big.mark = ","),
 #         caption = "Size of Interval (in Minutes)", format = "markdown") %>% 
 #   clipr::write_clip(allow_non_interactive = TRUE) %>% print()
 ```
+
+
+
 ```{r count_measurements}
-try4 <- movement %>% 
-  filter(type %in% c("Active Energy", "Heart Rate", "Basal Energy", 
-                      "Steps Watch", "Distance Watch")) %>% 
-  mutate(group = case_when(
-           !is.na(workoutActivityType) ~ "Workout",
-           (hour > 23) | (hour < 5) ~ "Sleep",
-           TRUE ~ "Day")) %>% 
+# let's focus on frequency of movement measurements (and heart rate)
+movement2 <- movement %>% 
+  filter(type %in% c("Active_Energy", "Heart_Rate", "Basal_Energy", 
+                      "Steps_Watch", "Walking_Watch", "Steps_Phone", "Walking_Phone")) %>% 
   group_by(date_start, group) %>% 
-  summarise(Active_Energy = sum(type == "Active Energy"),
-            Basal_Energy = sum(type == "Basal Energy"),
-             Heart_Rate = sum(type == "Heart Rate"),
-            Steps = sum(type == "Steps Watch"),
-            Distance = sum(type == "Distance Watch"),
-           ) %>% 
-  left_join(workout_by_date, by = c("date_start" = "date"))
-try5 <- try4 %>% 
+  summarise(Active_Energy = sum(type == "Active_Energy"),
+            Basal_Energy = sum(type == "Basal_Energy"),
+             Heart_Rate = sum(type == "Heart_Rate"),
+            Steps = sum(type == "Steps_Watch"),
+            Distance = sum(type == "Walking_Watch"),
+            Steps_Phone = sum(type == "Steps_Phone"),
+            Distance_Phone = sum(type == "Walking_Phone"),
+            workout_length = first(workout_length)
+           ) 
+items_per_minute <- movement2 %>% 
   mutate(
-    workout_minutes = ifelse(is.na(workout_minutes), 0.0, workout_minutes),
-    denom = case_when(
+    workout_minutes = ifelse(is.na(workout_length), 0.0, workout_length / 60),
+    year = year(date_start),
+    period_minutes = case_when(
       group == "Sleep" ~ 6 * 60,
-      group == "Day" ~ (18 * 60) - workout_minutes,
+      # used 17.5 hours in formula below to allow for half hour of charging
+      group == "Day" ~ (17.5 * 60) - workout_minutes,
       group == "Workout" ~ workout_minutes
     ),
-    ae = denom / Active_Energy, be = denom / Basal_Energy, 
-    hr = denom / Heart_Rate, steps = denom /Steps, dist = denom / Distance) 
-try6 <- try5 %>% 
-  group_by(group) %>% 
-  select(group, ae, be, hr, dist) %>% 
-  summarise_all(mean, na.rm = TRUE)
+    `Active Energy rate` = if_else(Active_Energy > 0, Active_Energy / period_minutes, NA_real_), 
+    `Basal Energy rate` = if_else(Basal_Energy > 0, Basal_Energy / period_minutes, NA_real_), 
+    `Pulse readings` = if_else(Heart_Rate > 0, Heart_Rate / period_minutes, NA_real_), 
+    `Steps (watch) rate` = if_else(Steps > 0, Steps / period_minutes, NA_real_),
+    `Steps (phone) rate` = if_else(Steps_Phone > 0, Steps_Phone / period_minutes, NA_real_),
+    `Distance rate` = if_else(Distance > 0, Distance / period_minutes, NA_real_)) 
+rate_data <- items_per_minute %>% ungroup() %>% 
+  select(group, date_start, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (phone) rate`, `Steps (watch) rate`) %>% 
+  # group_by(group) %>% 
+  pivot_longer(cols = `Active Energy rate`:`Steps (watch) rate`)
+ggplot(data = rate_data %>% filter(value < 500), 
+       aes(x = date_start, y = value, colour = group)) + geom_point()+
+         facet_wrap(~name, scales = "free_y")
+
+ggplot(data = rate_data %>% filter(value < 500), 
+       aes(x = value)) + geom_histogram()+
+         facet_wrap(name ~ group, scales = "free", ncol = 3)
+
+rate_table <- items_per_minute %>% 
+  group_by(year, group) %>% 
+  select(year, group, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (phone) rate`, `Steps (watch) rate`) %>% 
+  summarise_all(median, na.rm = TRUE)
 ```
 
-Spoiler alert: if you explicitly start a workout on the watch 
-measurements are taken much more frequently. 
-As a result the pattern of frequency of measurments
-is dramatically different depending on whether or not a workout is in progress.
-It doesn't makes sense to examine frequency of measurement
-without identifying whether measurements happened during a workout.
 
-It's tricky to identify which measurements were
-taken during workouts. We have to combine the health_df table with the workouts table. For
-each workout there is a start and an end time. Next I will join the `health_df` table
-with the `workout_df` table. A normal `dplyr` join such as `left_join` won't work because 
-we don't have exact matches.
-We want to know whether each row in `health_df` is within the range of
-the start and end time of any of the workouts.
 
-To do that I used the [fuzzyjoin package](https://github.com/dgrtwo/fuzzyjoin) by Dave Robinson.
-It provides a variety of special joins that do not rely on an exact match.
-In our case, we will use the `interval_left_join` function which joins tables based
-on overlapping intervals. The help for interval_left_join explains that this function requires
-the IRanges package available from Bioconductor and points to 
-[instructions for installation](https://bioconductor.org/packages/release/bioc/html/IRanges.html).
-This was the first time I have used anything from the Bioconductor repository. I'm
-impressed by the speed of `interval_left_join`. I thoght it would be impractical to run it
-on the full dataset, but it took less than 10 seconds to join 434 workouts to 3.3 million
-rows in the health_df table.
+```{r explore_outliers}
+xx <- rate_data %>% 
+  filter(group == "Day", name == "Pulse readings", value > 0.5)
+movement %>% filter(type == "Heart_Rate", date_start %in% xx$date_start) %>% 
+  arrange(start_date) %>% View()
+
+# focus on a slice of time
+health_df %>% filter(start_date >= ymd_hm("2018-04-13 09:46"), start_date <= ymd_hm("2018-04-13 10:21")) %>% arrange(start_date) %>% View()
+
+ggplot(data = movement, aes(span2)) + 
+  geom_bar() +
+  facet_wrap(type ~ group, scales = "free", ncol = 3)
+```
+
+
+HKQuantityTypeIdentifierActiveEnergyBurned	1,262,807	0	0	1	1,262,808
+HKQuantityTypeIdentifierBasalEnergyBurned
 
 ```{r}
+basal <- health_df %>% filter(type == "HKQuantityTypeIdentifierBasalEnergyBurned",
+                              str_detect(sourceName, "Watch")) %>% 
+    arrange(start_date, end_date)
+  
+basal %>% filter(start_date > lag(end_date)) %>% 
+  select(creationDate, start_date, end_date, span, sourceVersion,sourceName, hour)
+
+active <- health_df %>% filter(type == "HKQuantityTypeIdentifierActiveEnergyBurned",
+                              str_detect(sourceName, "Watch")) %>% 
+    arrange(start_date, end_date)
+
+xx <- active %>% filter(start_date > lag(end_date)) %>% 
+  select(creationDate, start_date, end_date, span, sourceVersion,sourceName, hour)
 
 ```
 
+There are 761,937 basal energy measurements. For 761,428, the start_date is the same as end_date
+for the previous row. That is, the periods covered by the basal energy measurements
+cover a continuous period. In only 489 cases the start_date of one
+row comes before the end_date of the preceding row.
+
+The active energy readings are not quite as regular. There are 1,246,352 active energy burned
+readings in my dataset. Of those, for 88% the start_date is equal to the preceding end_date. There
+are 1,000 cases where the start_date is earlier than the preceding end_date.
