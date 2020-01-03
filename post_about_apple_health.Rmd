@@ -101,26 +101,29 @@ library(kableExtra)
 library(PerformanceAnalytics) # to get correlation matrix
 library(janitor) # so that I an use the tabyl function
 library(scales) # to help format some tabular data
+library(fuzzyjoin)
 ```
 ```{r import_xml, echo = TRUE, cache = TRUE, messages = FALSE}
 rc <- unzip("~/Downloads/export.zip", exdir = "~/Downloads", overwrite = TRUE)
-if (length(rc) != 0) file.remove("~/Downloads/export.zip")
-# once unzipped, delete export.zip. Otherwise, the next time Air Drop sends export.zip
-# to your mac it will be renamed as export2.zip and you may accidentally process
-# an out-of-date set of data.
-
+if (length(rc) != 0) {
+  file.remove("~/Downloads/export.zip")
+  # once unzipped, delete export.zip. Otherwise, the next time Air Drop sends export.zip
+  # to your mac it will be renamed as export2.zip and you may accidentally process
+  # an out-of-date set of data.
+  
   # takes a bit more than 20 seconds on my iMac
-health_xml <- xmlParse("~/Downloads/apple_health_export/export.xml")
+  health_xml <- xmlParse("~/Downloads/apple_health_export/export.xml")
   # takes about 70 seconds on my iMac
-health_df <- XML:::xmlAttrsToDataFrame(health_xml["//Record"], stringsAsFactors = FALSE) %>%
+  health_df <- XML:::xmlAttrsToDataFrame(health_xml["//Record"], stringsAsFactors = FALSE) %>%
     as_tibble() %>% mutate(value = as.numeric(value))
-
-activity_df <- XML:::xmlAttrsToDataFrame(health_xml["//ActivitySummary"], stringsAsFactors = FALSE) %>% 
-  as_tibble()
-workout_df <-  XML:::xmlAttrsToDataFrame(health_xml["//Workout"], stringsAsFactors = FALSE) %>% 
-  as_tibble
-clinical_df <- XML:::xmlAttrsToDataFrame(health_xml["//ClinicalRecord"]) %>% 
-  as_tibble()
+  
+  activity_df <- XML:::xmlAttrsToDataFrame(health_xml["//ActivitySummary"], stringsAsFactors = FALSE) %>% 
+    as_tibble()
+  workout_df <-  XML:::xmlAttrsToDataFrame(health_xml["//Workout"], stringsAsFactors = FALSE) %>% 
+    as_tibble
+  clinical_df <- XML:::xmlAttrsToDataFrame(health_xml["//ClinicalRecord"]) %>% 
+    as_tibble()
+} else print(load("interim_save.RData"))
 ```
 
 I won't get into details of the XML structure of the health export.
@@ -356,12 +359,18 @@ the same time zone for all elements in the vector. By doing `group_by(start_time
 before I use the function inside `mutate`, the function will be applied with a 
 different time zone for each group. 
 That way the function is vectorized for each group and is reasonably fast. 
-I have to group the time zones separately for the start date and the end date. Usually
-they would be in the same tine zone, but that's not something I can count on. I
-also calculate `span` to be the time between the start_date and the end_date. We
-will see below how that can be an important diagnostic tool. For heart rate readings
-the start and the end time are the same. For that data item, `span` records the amount
-of time since the last reading was recorded, using the `lag` function.
+I did not group the time zones separately for the start date and the end date. Usually
+they would be in the same tine zone, and even if they are not I want to handle them as if they were. I
+also calculate two ways of measuring the frequency of measurements. First there is `span` which is the
+time in seconds between the start_date and the end_date. The second version is `interval`
+which is the the time between `start_date` and the next measurement of the same type
+(using the `lead` function).
+For most cases of activie energy and basal energy, `span` and `interval` have the
+same value because the the next `end_date` has the same value as the next
+`start_date`. We
+will see below how `interval` can be an important diagnostic tool. For heart rate readings
+the start and the end time are the same. For that data item, `span` is calculated
+the same way as `interval`.
 
 ```{r adjust_time_stamps, cache = TRUE}
 system.time(
@@ -384,7 +393,14 @@ system.time(
       (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
       TRUE ~ as.numeric(end_date) - as.numeric(start_date)),
     ) %>% 
-    select(-startDate, -endDate) # I don't need the character datetime stamp anymore
+    mutate(interval = case_when(
+      (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
+      (lead(type) == type) ~ lead(as.numeric(start_date)) - as.numeric(start_date),
+      TRUE ~ NA_real_
+    ))  %>% 
+    # mutate(interval = ifelse(lag(type) == type, as.numeric(start_date) - as.numeric(lag(start_date)),
+    #        NA_real_)) %>% 
+    ungroup()
 )
 # Here I'll adjust time for workout_df as well
 workout_df <- workout_df %>% 
@@ -398,8 +414,7 @@ workout_df <- workout_df %>%
   # mutate(end_time_zone = get_my_time_zone(endDate)) %>% 
   # group_by(end_time_zone) %>% 
   # mutate(end_date = UTC_to_clock_by_tz(endDate, first(end_time_zone))) %>% 
-  ungroup() %>% 
-  select(-startDate, -endDate)
+  ungroup()
 # I'm going to focus on health_df and workout_df, but I could adjust times in the other df's as well
 ```
 
@@ -425,28 +440,19 @@ Each measurement for the movement items has a start time and an end time. In
 R terms the time stamp is a `datetime` class. We have already spent a lot
 of effort correcting these datetime stamps for travel across time zones and for daylight savings.
 Next, let's examine these measurements in more detail. We 
-calculated an item called `span` which is the difference between the start and
-end of the measurement period in seconds. This provides some useful diagnostic
+calculated an item called `interval` which is the difference between the start 
+of the measurement  and the start of the next subsequent measurement of 
+the same type. A shorter interval indicates that a measurement is being
+made more frequently. This provides some useful diagnostic
 information about the nature of the measurements.
 
-**Most of these movement mesurements cover a time span of five seconds or less. They 
-are created very frequently. The table below shows the number of measurements broken 
-down by the span of time which the measurement covers. For example, the row that shows
-steps is nut the total number of steps, it is the number of times a step measurement is
-saved (where each measurement probably counts more than one step). There are a lot of 
-measurements that cover a period less than a minute. The watch (and phone) are being very
-busy saving separate measurements.**
-
-I wanted to look at how frequently measurements are taken. I realized that I needed to consider
-whether measurements were taken during a workout. 
+How frequently are measurements taken? As I dove into this question in some
+detail, I realized frequency is different during workouts.
 A **workout** is a feature of the Apple Watch. You start a 
 workout to record a period of physical activity and specify the type of activity. After
 you indicate that the workout is finished, Apple provides a summary of the activity (and
 saves that summary information in `activity_df`). You can view the summaries of your
-workouts via the Activity app on the
-During a workout, the watch records measurements much more frquently. 
-It doesn't makes sense to examine how frequently measurements are made
-without considering whether or not they occur during a workout. 
+workouts via the Activity app on the iPhone.
 
 It's tricky to identify which measurements were
 taken during workouts. We have to combine the `health_df` table with the `actiity_df` table. For
@@ -467,6 +473,12 @@ This was the first time I have used anything from the Bioconductor repository. I
 impressed by the speed of `interval_left_join`. I thought it would be impractical to run it
 on the full dataset, but it took less than 10 seconds to join 434 workouts to 3.3 million
 rows in the health_df table.
+
+The next long code block examines items in `health_df` that are measured frequently each day and joins that
+data to the `workout_df`. The code breaks the day into three periods:    
+ sleep (it assumes I was asleep anytime between 11 PM and 6 AM)    
+ day (anytime from 6 AM until 11 PM when I am not doing a workout)    
+ workout (the time between the start and end of the workout as shown in `workout_df`)    
 
 ```{r examine_span, cache = TRUE, echo = FALSE}
 earliest_watch_data <- min(health_df$start_date[str_detect(health_df$sourceName, "Watch")], na.rm = TRUE)
@@ -501,8 +513,21 @@ movement <- health_df %>%
     span <= (30*60) ~ "30-60",
     TRUE ~ ">60"
   ),
-  # span2 is range of intervals (in minutes rather than in seconds)
-  span2 = factor(span2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" ))) %>% 
+  interval2 = case_when(
+    interval <= 30 ~ "<=0.5",
+    interval <= (2 * 60) ~ "0.5-2",
+    interval <= (10 * 60) ~ "2-10",
+    interval <= (30*60) ~ "10-30",
+    interval <= (30*60) ~ "30-60",
+    TRUE ~ ">60"
+  ),
+  Version = case_when(
+    str_detect(sourceName, "Phone") ~ "Phone",
+    str_detect(sourceVersion, "[0-9]\\.") ~ paste0("Watch OS ", str_sub(sourceVersion, 1, 1)),
+    TRUE ~ "Other"),
+  # span2 is range of time between start and end (in minutes rather than in seconds)
+  span2 = factor(span2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" )),
+  interval2 = factor(interval2, levels = c("<=0.5", "0.5-2", "2-10", "10-30", "30-60", ">60" ))) %>% 
   # next we will use interval_left_join to get workout info
   # interval_join doesn't work unless the end_date is greater than the start_date, 
   # so add one second to the end_date of the heart rate measurements.
@@ -511,8 +536,13 @@ movement <- health_df %>%
   filter(end > start) %>% 
   interval_left_join(
     workout_df %>% select(start = start_date, end = end_date, workoutActivityType, totalEnergyBurned) %>%
-      filter(end > start)) 
-  # get workout length by day
+      filter(end > start)) %>% 
+  mutate(Period = case_when(
+           !is.na(workoutActivityType) ~ "Workout",
+           (hour >= 23) | (hour <= 6) ~ "Sleep",
+           TRUE ~ "Day"))
+
+# get workout length by day (in minutes)
 workout_length <- workout_df %>% filter(str_detect(sourceName, "Watch")) %>% 
   mutate(date_start = as_date(start_date), workout_length = as.numeric(duration), 
          workout_energy = as.numeric(totalEnergyBurned), workout_distance = as.numeric(totalDistance)) %>% 
@@ -520,12 +550,8 @@ workout_length <- workout_df %>% filter(str_detect(sourceName, "Watch")) %>%
   summarize(workout_length = sum(workout_length, na.rm = TRUE), workout_energy = sum(workout_energy, na.rm = TRUE),
             workout_distance = sum(workout_distance, na.rm = TRUE)) %>% 
   ungroup()
-movement <- movement %>% 
-  left_join(workout_length, by = "date_start") %>% 
-  mutate(group = case_when(
-           !is.na(workoutActivityType) ~ "Workout",
-           (hour > 23) | (hour < 6) ~ "Sleep",
-           TRUE ~ "Day"))
+
+save(movement, file = "movement.RData")
 
 # movement %>% mutate(span_minutes = span / 60, wday = wday(start_date, label = TRUE)) %>% filter((type == "Active_Energy"), span_minutes > (15)) %>% select(sourceVersion, start_date, end_date, span_minutes, wday) %>% View()
 
@@ -534,8 +560,51 @@ movement <- movement %>%
 #   kable(format.args = list(decimal.mark = " ", big.mark = ","),
 #         caption = "Size of Interval (in Minutes)", format = "markdown") %>% 
 #   clipr::write_clip(allow_non_interactive = TRUE) %>% print()
+
+# Note that on 9:23:00 on 2019-11-30, watch displayed pulse "11 minutes ago". Looking at data,
+# pulse was recorded every few seconds. At 9:22 40 there was a 273 second gap between heart rate recordings.
+# But watch may be displaying what the rate was 11 minutes ago, but that doesn't mean the
+# most recent puse reading was 11 minutes ago (and not displayed).
 ```
 
+Next we look at the length of time between measurements, as shown by `interval`. 
+Note that in the code below `Steps`, for example,
+is the number of seconds between a saved record of the number of steps, not
+the count of steps itself. 
+
+The `items_per_minute` counts the number of measures in each part of the day and then also counts
+the number of minutes in each part of the day. We divide the number of measurements by the number of
+minutes in which a measurement could occur to get measurements per minute. For workouts we have a 
+direct report on the duration for each measurement. For `day` and `sleep` we are making some assumptions.
+The assumptions are not exact. There may have been a couple of nights when I didn't wear the wath all night.
+I'm assuming a half an hour for charging (during which no measurements would be made), but that's a 
+crude estimate. For our purposes here we dont need to be exact. 
+
+```{r tabulate_interval}
+movement3 <- movement %>% 
+  filter(Version %in% c("Watch OS 5", "Watch OS 6"), type %in% c("Active_Energy", "Basal_Energy", "Steps_Watch", "Walking_Watch", "Heart_Rate")) %>% 
+  group_by(type, Period) %>% 
+  summarise(interval50 = median(interval, na.rm = TRUE),
+            interval10 = quantile(interval, probs = 0.10, na.rm = TRUE),
+            interval25 = quantile(interval, probs = 0.25, na.rm = TRUE),
+            interval75 = quantile(interval, probs = 0.75, na.rm = TRUE),
+            interval90 = quantile(interval, probs = 0.90, na.rm = TRUE))
+# movement3 %>% pivot_wider(values_from = interval50, names_from = Period, id_cols = c(type))
+movement3 %>% pivot_wider(values_from = c(interval50:interval90), names_from = Period, id_cols = c(type))
+
+ggplot(data = movement3, aes(x = type, y = interval50, group = factor(Period))) +
+  geom_pointrange(aes(ymin = interval25, ymax = interval75), position = position_dodge(width = 1, preserve = "total"))
+
+movement_span <- movement %>% 
+  filter(Version %in% c("Watch OS 5", "Watch OS 6")) %>% 
+  group_by(type, Period) %>% 
+  summarise(span50 = median(span, na.rm = TRUE),
+            span25 = quantile(span, probs = 0.10, na.rm = TRUE),
+            span75 = quantile(span, probs = 0.90, na.rm = TRUE))
+movement_span  %>% 
+  pivot_wider(values_from = c(span50, span10), names_from = Period, id_cols = c(type))
+
+```
 
 
 ```{r count_measurements}
@@ -543,7 +612,7 @@ movement <- movement %>%
 movement2 <- movement %>% 
   filter(type %in% c("Active_Energy", "Heart_Rate", "Basal_Energy", 
                       "Steps_Watch", "Walking_Watch", "Steps_Phone", "Walking_Phone")) %>% 
-  group_by(date_start, group) %>% 
+  group_by(Version, date_start, Period) %>% 
   summarise(Active_Energy = sum(type == "Active_Energy"),
             Basal_Energy = sum(type == "Basal_Energy"),
              Heart_Rate = sum(type == "Heart_Rate"),
@@ -551,61 +620,104 @@ movement2 <- movement %>%
             Distance = sum(type == "Walking_Watch"),
             Steps_Phone = sum(type == "Steps_Phone"),
             Distance_Phone = sum(type == "Walking_Phone"),
-            workout_length = first(workout_length)
-           ) 
-items_per_minute <- movement2 %>% 
+            Basal_Minutes = sum(span, na.rm = TRUE) / 60
+          ) %>% 
   mutate(
-    workout_minutes = ifelse(is.na(workout_length), 0.0, workout_length / 60),
+    workout_minutes = ifelse(is.na(workout_length), 0.0, workout_length),
     year = year(date_start),
     period_minutes = case_when(
-      group == "Sleep" ~ 6 * 60,
+      Period == "Sleep" ~ 7 * 60,
       # used 17.5 hours in formula below to allow for half hour of charging
-      group == "Day" ~ (17.5 * 60) - workout_minutes,
-      group == "Workout" ~ workout_minutes
-    ),
+      Period == "Day" ~ (16.5 * 60) - workout_minutes,
+      Period == "Workout" ~ workout_minutes
+    ))
+
+items_per_minute <- movement2 %>% 
+  mutate(
     `Active Energy rate` = if_else(Active_Energy > 0, Active_Energy / period_minutes, NA_real_), 
     `Basal Energy rate` = if_else(Basal_Energy > 0, Basal_Energy / period_minutes, NA_real_), 
     `Pulse readings` = if_else(Heart_Rate > 0, Heart_Rate / period_minutes, NA_real_), 
     `Steps (watch) rate` = if_else(Steps > 0, Steps / period_minutes, NA_real_),
     `Steps (phone) rate` = if_else(Steps_Phone > 0, Steps_Phone / period_minutes, NA_real_),
-    `Distance rate` = if_else(Distance > 0, Distance / period_minutes, NA_real_)) 
+    `Distance rate` = if_else(Distance > 0, Distance / period_minutes, NA_real_))
+interval_between_measures <- movement %>% 
+  group_by(Period,Version, type) %>% 
+  summarise(interval = median(interval, na.rm = TRUE))
+
+  
 rate_data <- items_per_minute %>% ungroup() %>% 
-  select(group, date_start, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (phone) rate`, `Steps (watch) rate`) %>% 
-  # group_by(group) %>% 
+  select(Period, date_start, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (phone) rate`, `Steps (watch) rate`) %>% 
+  # group_by(Period) %>% 
   pivot_longer(cols = `Active Energy rate`:`Steps (watch) rate`)
 ggplot(data = rate_data %>% filter(value < 500), 
-       aes(x = date_start, y = value, colour = group)) + geom_point()+
+       aes(x = date_start, y = value, colour = Period)) + geom_point()+
          facet_wrap(~name, scales = "free_y")
 
 ggplot(data = rate_data %>% filter(value < 500), 
        aes(x = value)) + geom_histogram()+
-         facet_wrap(name ~ group, scales = "free", ncol = 3)
+         facet_wrap(name ~ Period, scales = "free", ncol = 3)
 
 rate_table <- items_per_minute %>% 
-  group_by(year, group) %>% 
-  select(year, group, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (phone) rate`, `Steps (watch) rate`) %>% 
+  filter(Version != "Phone") %>% 
+  group_by(Version, Period) %>% 
+  select(Version, Period, `Active Energy rate`, `Basal Energy rate`, `Pulse readings`, `Distance rate`, `Steps (watch) rate`) %>% 
   summarise_all(median, na.rm = TRUE)
+
+# # seconds between measurmeents
+# rate_table_interval <- interval_between_measures %>% 
+#   filter(Version != "Phone") %>% 
+#   group_by(Period, Version) %>% 
+#   select(Version, Period, `Active Energy interval`, `Basal Energy interval`, `Pulse interval`, `Distance interval`, `Steps (watch) interval`) %>% 
+#   summarise_all(median, na.rm = TRUE)
+# 
+# 
+# minutes_seconds <- function(x) {
+#   if_else(x < 60, paste(as.character(round(x, 1)), "seconds"),
+#   paste(as.character(round(x/60, 1)), "minutes"))
+# }
+# 
+# rate_table_interval %>% mutate_if(is.numeric, minutes_seconds)
+# 
+# xx <- movement3 %>% filter(Period == "Wake", Version %in% c("Watch OS 5", "Watch OS 6"),  type == "Heart_Rate")
+# movement3 <- movement %>% arrange(type, start_date) %>% 
+#     mutate(interval = ifelse(lag(type) == type, as.numeric(start_date) - as.numeric(lag(start_date)),
+#            NA_real_)) 
+# 
+# summary(movement3$interval[(movement3$Version == "Watch OS 5") & (movement3$type == "Heart_Rate") & (movement3$Period == "Day")])
+# 
+# movement3 %>% filter(type == "Heart_Rate") %>% select(start_date, interval, Period)
+# 
+# p <- ggplot(data = movement3 %>% filter(Version %in% c("Watch OS 5", "Watch OS 6"), interval < 600,
+#                                    type %in% c("Heart_Rate", "Basal_Energy", "Active_Energy",
+#                                                "Steps_Watch", "Walking_Watch")), 
+#        aes(x = interval)) +
+#   geom_histogram(binwidth = 10) + 
+#   facet_wrap(type ~ factor(Period, levels = c("Sleep", "Day", "Workout")),
+#              scales = "free_y", ncol = 3) +
+#   ylab(NULL) + xlab("interval (seconds)")
 ```
 
+The next table shows the items per minute separately for sleep, day, and workout periods. It is also
+broken down by the version of the Watch software because that turns out to have changed, especially
+during workouts. I have a Series 4 Watch. I installed version 5 of the Watch OS in September 2018. 
+The frequency of measurements during workouts increased dramatically. Active Energy readings went
+from 0.25 in version 4 (or 15 per hour) to 23 per minute in version 5 (or 1,380 per hour). Pulse
+and distance readings also became more frequent during workouts after version 5 went into effect.
 
+Outside of workout periods there's not much change from the earlier version of the OS. 
+But the workout change is so great that it has materially
+affected the total volume of data in the Apple Health Export. My workouts are generally outdoor walks.
+They generally go for at least an hour but my idea of a good time is to do a walking holiday with a week or so of all-day walks (plus training days ahead of time to get in shape for all-day
+walks). Many hours spent in walking workouts is how I ended up with 3.5 million rows in `health_df`.
 
-```{r explore_outliers}
-xx <- rate_data %>% 
-  filter(group == "Day", name == "Pulse readings", value > 0.5)
-movement %>% filter(type == "Heart_Rate", date_start %in% xx$date_start) %>% 
-  arrange(start_date) %>% View()
+```{r rate_table, echo = FALSE}
 
-# focus on a slice of time
-health_df %>% filter(start_date >= ymd_hm("2018-04-13 09:46"), start_date <= ymd_hm("2018-04-13 10:21")) %>% arrange(start_date) %>% View()
+kable(rate_table, format = "markdown", caption = "Measurement per Minute", format.args = list(digits = 2)) %>% 
+  add_header_above(c(" " = 1, " " = 2, "Measurements per Minute")) %>% 
+  clipr::write_clip(allow_non_interactive = TRUE) %>% print()
 
-ggplot(data = movement, aes(span2)) + 
-  geom_bar() +
-  facet_wrap(type ~ group, scales = "free", ncol = 3)
 ```
 
-
-HKQuantityTypeIdentifierActiveEnergyBurned	1,262,807	0	0	1	1,262,808
-HKQuantityTypeIdentifierBasalEnergyBurned
 
 ```{r}
 basal <- health_df %>% filter(type == "HKQuantityTypeIdentifierBasalEnergyBurned",

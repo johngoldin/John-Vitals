@@ -82,7 +82,19 @@ movement2 <- movement %>% mutate(year = year(start_date)) %>%
 movement2 %>% select(p50)
 ```
 
+```{r explore_outliers}
+xx <- rate_data %>% 
+  filter(group == "Day", name == "Pulse readings", value > 0.5)
+movement %>% filter(type == "Heart_Rate", date_start %in% xx$date_start) %>% 
+  arrange(start_date) %>% View()
 
+# focus on a slice of time
+health_df %>% filter(start_date >= ymd_hm("2018-04-13 09:46"), start_date <= ymd_hm("2018-04-13 10:21")) %>% arrange(start_date) %>% View()
+
+ggplot(data = movement, aes(span2)) + 
+  geom_bar() +
+  facet_wrap(type ~ group, scales = "free", ncol = 3)
+```
 
 watchOS 5.0.1
 This update contains improvements and bug fixes, including:

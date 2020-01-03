@@ -15,6 +15,7 @@ library(tidyverse)
 ```
 
 ```{r read_from_csv}
+source("R/create_bp_dataset.R")
 # Based on blood pressure data in Blood Pressure.numbers in the Personal folder in Dropbox.
 # Exported to csv in the John Vitals folder.
 bp_spreadsheet <- read_csv("Blood Pressure.csv", col_types = cols(

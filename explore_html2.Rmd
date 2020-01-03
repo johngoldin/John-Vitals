@@ -65,3 +65,27 @@ steps_alt <- xml_find_all(health_xml, ".//Record[@type='HKQuantityTypeIdentifier
 glimpse(steps)
 ```
 
+```{r}
+resting_heart_rate_df <- health_df %>% 
+  filter(type == "HKQuantityTypeIdentifierRestingHeartRate")
+goof <- resting_heart_rate_df %>% count(date) %>% filter(n > 1)
+rhr <- resting_heart_rate_df %>% filter(!(date %in% goof$date))
+xx <- health_df %>% filter(date >= min(rhr$date), type == "HKQuantityTypeIdentifierHeartRate") %>% 
+  left_join(rhr %>% select(date, resting_hr = value), by = "date") %>% 
+  filter(!is.na(resting_hr))
+
+yy <- xx %>% filter(value <= resting_hr) %>% 
+  group_by(date) %>% 
+  summarise(low_hour = min(hour))
+```
+
+
+Evaluate interval versus span in movement
+
+
+```{r interval_vs_span}
+xx <- movement %>% 
+  filter(Version == "Watch OS 6") %>% 
+  select(start_date, end_date, type, Period, span, interval, workoutActivityType)
+```
+
