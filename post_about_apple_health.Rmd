@@ -1,32 +1,32 @@
 ---
-title: "Post about Apple Health"
+title: "Apple Health Export Part I: Basic Import and Dealing with Time Zones"
 author: John Goldin
 date: '2019-11-01'
 categories:
   - R
-slug: working-with-apple-health-export
-lastmod: '2019-10-06T08:50:22-04:00'
+slug: apple-health-export-part1
+lastmod: '2020-01-26T08:50:22-04:00'
 layout: post
 type: post
 highlight: no
 draft: yes
-output: html_document
+output: 
+  html_document:
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-This post will work through the mechanics of moving data from the Apple Health app
-out of your iPhone and into R where you can analyze it. It will dig into the details
-of what is in the export data. It will describe in detail the problem of 
+This will be the first of a series of posts
+on the Apple Health Export. Today's post will work through the mechanics of moving data from the Apple Health app
+out of your iPhone and into R where you can analyze it. 
+It will describe in detail the problem of 
 adjusting the time stamps for daylight savings time and travel across time zones.
-Next it will offer some
-tips on how to prepare and clean up the data a bit. Finally, it will 
-explore some of the properties of the types of data available
-via the Health app. As an example of how one might use the data,
-the heart rate data is used to flesh out the description of a visiting to an
-emergency room.
+It gets flight information
+from TripIt and uses that information to track movements across time zones that
+affect Apple Health Export time stamps.
 
 ##### First, export the data from the Health app
 
@@ -88,7 +88,7 @@ The R code uncompresses the zip file and replaces the `apple_health_export` fold
 (Because of the size of this folder, I try to avoid having multiple copies and also
 avoid having it saved to my disk backup.)
 The big file inside that folder is `export.xml`. Following the examples sited above, I
-use the XML package to covert the major elements of the XML file into
+use the XML package to convert the major elements of the XML file into
 tidy data frames.
 
 ```{r load_libraries, messages = FALSE, warnings = FALSE}
@@ -126,11 +126,11 @@ if (length(rc) != 0) {
 } else print(load("interim_save.RData"))
 ```
 
-I won't get into details of the XML structure of the health export.
+I won't go into the details of the XML structure of the health export.
 For most purposes, the Record, ActivitySummary, Workout, and Clinical data types
 will provide all that you are looking for. My expanded Apple Health Export
 folder also includes workout GPX files, electrocardiograms, and clinical
-records imported from my physician's medical records system.
+records imported from my health system's medical records.
 
 I have a bit over two years of Apple Watch data in my iPhone. 
 After a full career working
@@ -139,7 +139,7 @@ I have ever dealt with. Extracting the "Record" data  from `export.xml` produces
 3.4 million rows and takes about 70 seconds on my 2019 iMac. 
 
 The counts by "type" describe the breadth and quantity of data:
-```{r freq_type}
+```{r freq_type, echo = FALSE}
 health_df2 <- health_df %>% 
   mutate(source = case_when(
     str_detect(sourceName, "Phone") ~ "Phone",
@@ -157,22 +157,20 @@ health_df2 %>%
 
 ```
 
-
-
-
-Most of the data is collected via the Apple Watch. 
-Some basic movement data is collected by the iPhone. 
+In terms of number of observations, most of the data is collected via my Apple Watch rather than my iPhone. 
+The Health App serves as a central repository for data from non-Apple sources as well as
+the data collected by watch and phone.
 I have been using the *Lose It!* app on my iPhone for about six months to count calories,
-and that produces quite a bit of data. 
+and that produces a noticeable amount of data. 
 The free version of the app which I am using does not display much beyond
 basic calorie counts. 
 It's interesting to see that the more detailed nutrition breakdowns are passed
-into the Health app. I haven't attempted to look at any of the nutrition information.
+into the Health app. 
 
-As far as the "Other" category, I'm using an Omron blood pressure cuff 
+I'm using an Omron blood pressure cuff 
 that can transfer readings to the Omron app on the iPhone via Bluetooth. Those
 readings are then updated in the Apple Health database. 
-There are a few odds and ends contributed by apps on my iPhone
+There also are a few odds and ends contributed by apps on my iPhone
 such as AllTrails, Breathe, and AutoSleep.
 
 Sometimes the same data may be repeated on multiple sources
@@ -219,15 +217,19 @@ I quickly discovered I had several days where there were two values in a single 
 and that was related to
 occasions when I traveled by air to a different time zone.
 
-This leads us to a long digression on the subject of computer time stamps and time zones. 
+This leads to a long digression on the subject of computer time stamps and time zones. 
 (There is an [entertaining video](https://www.youtube.com/watch?v=-5wpm-gesOY) that describes
 the general problem of time stamps and time zones, but it doesn't relate to the specific
 problems that I will get into here. It's fun if you want to nerd out on this topic.)
 
+Before I dive into the issue of time stamps, note that for many purposes you can just 
+ignore this issue and skip the headaches associated with adjusting the time stamps.
+For my purposes I care about time of day so it was worthwhile to try to get the time of day correct.
+
 Each item in the records of the health dataset has a creation, start, and end time stamp. In the export dataset
 they appear as a character string that looks like this: "2019-04-10 07:10:34 -0400". 
 The "-0400" on the end
-is because as I write this local time is Eastern Daylight Savings which is four hours 
+is because when I began this text the local time was Eastern Daylight Savings which is four hours 
 earlier than UTC (universal
 time code). At first I thought that time code info would take care of everything. 
 In fact, it is useless.
@@ -239,7 +241,8 @@ If I re-exported that data after the
 switch to Eastern Standard Time, all of the offsets will appear as "-0500". 
 In fact, the exported data has no information about time zone. 
 When I did a workout in San Diego in January, the time stamp that was attached to that workout
-was the local time when I did the workout. In the export file now it has a UTC offset of "-0400". 
+was the local time when I did the workout. In the export file now it has a UTC offset of "-0400"
+(or "-0500" depending on daylight savings). 
 In reality, local time when I did the workout was offset from UTC by "-0800" (i.e.. 8 hours). 
 I can tell that this is an issue of how the Apple Health data stores 
 the date and time because I can see the issue via the Activity app on my phone,
@@ -251,7 +254,21 @@ at 09:51:58 local time.
 If I went back to look at the same workout after the change from daylight savings to standard
 time, it would appear as 04:51:58 rather than 05:51:58.
 
+Here is my understanding of how time stamps work in the export. At the time an item is added to the
+data and the time stamp is created, the time is converted to UTC and saved with the data. 
+But there's no information stored about the original time zone
+or the offset from UTC. When the data is exported, each time stamp is converted from UTC to the time zone
+of the the phone creating the export. But if data was added in a different time zone (or 
+different daylight savings conditions), the exported time stamp will not be the same as the 
+what showed on the phone when the data was created.
+
+To get back to what the time stamp looked like when it was originally created, we have to reverse the
+steps. Convert the time from the current time zone back to UTC. Based on the time zone when the data
+was created (which is not directly available in the export), convert from UTC into that time zone.
+
 [^1]: The documentation for the Apple Health Kit does offer a way for developers to store [time zone meta data](https://developer.apple.com/documentation/healthkit/hkmetadatakeytimezone?language=objc) via the `HKMetadataKeyTimeZone` object. It appears that [not even Apple uses this feature](https://stackoverflow.com/questions/49250964/hkmetadatakeytimezone-is-always-nil-for-health-data-which-is-created-by-apples). And the Apple documentation only suggests using it for sleep data. It would be impractical to try to attach this meta data to every single observation.
+
+
 
 When does this matter? 
 With a multi-time-zone shift, it's not hard to end up with datetime stamps that appear in
@@ -299,62 +316,48 @@ There are a number of tips out there for activity tracking in the face of
 
 #### My Treatment of Time Zones and the Apple Health Export
 
-Here I describe a solution to the time zone issue, but it is not very elegant.
+Here I describe a solution to the time zone issue. It depends on identifying all
+the data rows that took place in a different time zone. I tried two approaches
+to this task: a function which hard codes the interpretation of time zone or 
+fetching flight (and time zone) information via a TripIt API call (and supplementing
+that with a small manual table of data).
 
-First I wrote a function `get_my_time_zone` that identifies in what time zone I was 
-located during the two year period for which I need time zone info to interpret watch data. The
-function hard codes when I landed in a different time zone and therefore changed
-the time zone on my watch. That's the aspect of this solution that is not very elegant. 
-The function hard codes my personal travel history. It will only work for me.[^2] If I
-travel across a time zone I need to remember to edit the function with my travel details.
+I will describe the process out of order. First I am first going to describe what to do with
+time zone after you've got it so that one can understand the motivation for doing
+all this work. 
+After that, I'll go back and describe where the time zone information came from.
+The process of using the TripIt API to get
+that data is fairly involved, and I'm going to show it in detail.
 
-[^2]: It might be possible to use the Tripit API to get flight information that could be used in the `get_my_time_zone` function.
- 
-```{r clean_up_time_zones}
-get_my_time_zone <- function(dt) {
-  # What I'm going for is the time zone used by my watch. 
-  # I'm assuming my watch got the local clock time about the
-  # same time as the scheduled arrival for my flight.
-  time_zone <- case_when(
-    (dt >= as_datetime("2018-01-31 16:00:00")) & # trip to RStudio conference
-      (dt <= as_datetime("2018-02-07 13:01:00")) ~ "America/Los_Angeles",
-    (dt >= as_datetime("2018-04-18 08:00:00")) & # trip to Amsterdam
-      (dt <= as_datetime("2018-04-20 13:50:00")) ~  "Europe/Amsterdam",
-    (dt >= as_datetime("2018-04-20 13:50:00")) & # trip to Athens
-      (dt <= as_datetime("2018-04-30 15:52:00")) ~  "Europe/Athens",
-    (dt >= as_datetime("2019-06-21 03:45:00")) & # trip to SW England
-      (dt <= as_datetime("2019-07-05 13:25:00")) ~  "Europe/London",
-    (dt >= as_datetime("2019-08-28 06:30:00")) & # trip to Manchester
-      (dt <= as_datetime("2019-09-10 12:40:00")) ~  "Europe/London",
-    TRUE ~ "America/New_York" # good old Eastern time, home sweet home
-  )
-  return(time_zone)
-}
-get_my_time_zone <- compiler::cmpfun(get_my_time_zone)
-```
+Let's proceed. Assume we already have a time stamp for each row of data in `health_df`. How
+do we use that information to show the local time when the data in that row was created?
 
-Next I need to use `lubridate` functions to adjust the Apple Health export 
-time stamps so that the hour corresponds to the local time I actually experienced.
-
+The `UTC_to_clock_by_tz` function goes through the needed steps. The data is exported
+in terms of the current time zone. Use `lubridate::with_tz` to convert that to UTC.
+Then convert the resulting date to the "local" time useing the value of `time_zone`
+(and below I'll provide some suggestions on where to get time_zone; it's not in 
+the health export).
 
 ```{r UTC_to_clock_by_tz}
 # I will be applying this function to nearly a million times so it's important
 # that it be vectorized and compiled. Vectorized is what really counts.
 UTC_to_clock_by_tz <- function(dt, time_zone) {
   # adjust a vector of datetime to a specific time zone and report as though it were utc
-  tz(dt) <- .sys.timezone    # make sure vector is set to my current local time zone
+  tz(dt) <- Sys.timezone()    # make sure vector attribute is set to my current local time zone
   utc <- with_tz(dt, tzone = "UTC")   # what is the datetime in terms of UTC
   # with_tz is the key lubridate function that I am relying on. Handles daylight savings as well.
   local <- with_tz(utc, time_zone) # now adjust utc to the time zone I want
   tz(local) <- "UTC"    # treat everything as if it were UTC, even if it isn't, because the whole vector has to be one arbitrary time zone when I bind rows together
   # Although the vector is marked as UTC, I will treat the hour as being whatever the local
-  # time was that I experienced then.
+  # time was that I experienced when the row was created.
   return(local)
 }
 ```
 
-Next I will apply the `UTC_to_clock_by_tz` function to the character time stamps
-in the Apple Health Export. The function needs to be applied to a vector with
+I will apply the `UTC_to_clock_by_tz` function to the character time stamps
+in the Apple Health Export. 
+The `lubridate` package and R time functions treat time zone as an
+attribute of an entire vector. Consequently the function needs to be applied to a vector with
 the same time zone for all elements in the vector. By doing `group_by(start_time_zone)`
 before I use the function inside `mutate`, the function will be applied with a 
 different time zone for each group. 
@@ -424,6 +427,123 @@ Save some stuff so that I can skip the slow steps above:
 save(health_xml, health_df, activity_df, workout_df, clinical_df, file = "interim_save.RData")
 
 # print(load("interim_save.RData"))
+```
+
+#### Where Did I Get Time Zone?
+
+First I wrote a function `get_my_time_zone` that identifies in what time zone I was 
+located during the two year period for which I need time zone info to interpret watch data. The
+function hard codes when I landed in a different time zone and therefore changed
+the time zone on my watch. That's the aspect of this solution that is not very elegant. 
+The function hard codes my personal travel history. It will only work for me. If I
+travel across a time zone I need to remember to edit the function with my travel details.
+ 
+```{r clean_up_time_zones}
+get_my_time_zone <- function(dt) {
+  # What I'm going for is the time zone used by my watch. 
+  # I'm assuming my watch got the local clock time about the
+  # same time as the scheduled arrival for my flight.
+  time_zone <- case_when(
+    (dt >= as_datetime("2018-01-31 16:00:00")) & # trip to RStudio conference
+      (dt <= as_datetime("2018-02-07 13:01:00")) ~ "America/Los_Angeles",
+    (dt >= as_datetime("2018-04-18 08:00:00")) & # trip to Amsterdam
+      (dt <= as_datetime("2018-04-20 13:50:00")) ~  "Europe/Amsterdam",
+    (dt >= as_datetime("2018-04-20 13:50:00")) & # trip to Athens
+      (dt <= as_datetime("2018-04-30 15:52:00")) ~  "Europe/Athens",
+    (dt >= as_datetime("2019-06-21 03:45:00")) & # trip to SW England
+      (dt <= as_datetime("2019-07-05 13:25:00")) ~  "Europe/London",
+    (dt >= as_datetime("2019-08-28 06:30:00")) & # trip to Manchester
+      (dt <= as_datetime("2019-09-10 12:40:00")) ~  "Europe/London",
+    TRUE ~ "America/New_York" # good old Eastern time, home sweet home
+  )
+  return(time_zone)
+}
+get_my_time_zone <- compiler::cmpfun(get_my_time_zone)
+```
+
+##### Using My TripIt Data
+
+A jazzier approach is to get a history of flights via a TripIt API. This
+was inspired by a talk by Hadley Wickham. The point of the talk was data 
+visuallization, but one of his [examples](https://github.com/hadley/vis-eda/blob/master/vis-eda.pdf) 
+was based on relationship between
+when he is traveling and number of commits on GitHub. I started with [Hadley's code](https://github.com/hadley/vis-eda/blob/master/travel.R) 
+to fetch history from TripIt. What I needed was the history of my airplane flights.
+
+There's a TripIt [developer page](https://www.tripit.com/developer) that points you to
+more information. TripIt has an OAuth API for full-strength applications. That was more
+than I needed. Hadley used a simpler for of authorization. Here's the [TripIt description](http://tripit.github.io/api/doc/v1/index.html):
+
+> TripIt API offers a very simple way of authenticating the API that should only be used for testing and development purposes.... Note that this authentication scheme is off by default for every TripIt user. If you want to have this turned on for your account so you can use it for development purposes please send email to support@tripit.com.
+
+Simple authentication sounds good to me and it was the method Hadley used, so I sent an email
+to TripIt asking to turn on the simple authentication version of the API. I heard back from them the
+next day. With the simple authentication method, I include my TripIt ID and password in each https call to the API.
+I used the `httr` package to setup and make the calls to the API.
+
+Next I need to use `lubridate` functions to adjust the Apple Health export 
+time stamps so that the hour corresponds to the local time I actually experienced.
+
+```{r TripIt_functions, eval = FALSE}
+# much of code based on https://github.com/hadley/vis-eda/blob/master/travel.R
+auth <- httr::authenticate(
+  "john.r.goldin@gmail.com",
+  rstudioapi::askForPassword("tripit password"),
+  "basic"
+)
+
+GET_tripit <- function(url, query = list(), ...) {
+  default_query <- list(
+    format = "json",
+    page_size = 500
+  )
+  query <- modifyList(default_query, query)
+
+  r <- GET(url, auth, query = query, ...)
+  httr::stop_for_status(r)
+  httr::content(r)
+}
+
+list_trips <- function(page_num = 1) {
+  GET_tripit(
+    "https://api.tripit.com/v1/list/trip/past/true",
+    query = list(page_num = page_num)
+  )
+}
+
+GET_air <- function(trip_id) {
+  print(paste0("https://api.tripit.com/v1/get/trip/id/",
+               trip_id, "/include_objects/true"))
+  atrip <-
+    GET_tripit(
+      paste0(
+        "https://api.tripit.com/v1/get/trip/id/",
+        trip_id,
+        "/include_objects/true"
+      )
+    )
+  air_trip <- atrip[["AirObject"]][["Segment"]]
+  flights <- tibble(
+    trip_id = trip_id,
+    trip_start = atrip[["Trip"]][["start_date"]],
+    start_date = air_trip %>% map("StartDateTime") %>% map_chr("date"),
+    start_time =  air_trip %>% map("StartDateTime") %>% map_chr("time"),
+    start_timezone =  air_trip %>% map("StartDateTime") %>% map_chr("timezone"),
+    start_city = air_trip %>%  map_chr("start_city_name"),
+    end_date = air_trip %>% map("EndDateTime") %>% map_chr("date"),
+    end_time =  air_trip %>% map("EndDateTime") %>% map_chr("time"),
+    end_timezone =  air_trip %>% map("EndDateTime") %>% map_chr("timezone"),
+    end_city = air_trip %>%  map_chr("end_city_name"),
+    airline = air_trip %>%  map_chr("marketing_airline"),
+    code = air_trip %>%  map_chr("marketing_airline_code"),
+    number = air_trip %>%  map_chr("marketing_flight_number"),
+    aircraft = air_trip %>%  map_chr("aircraft_display_name"),
+    distance = air_trip %>%  map_chr("distance"),
+    duration = air_trip %>% map_chr("duration")
+  )
+}
+# memoised GET_air because it often doesn't run to completion because of API limits
+GET_air_mem <- memoise::memoise(GET_air)
 ```
 
 
