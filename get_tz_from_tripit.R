@@ -1,3 +1,6 @@
+
+# note this url by a forensic company:  https://blog.elcomsoft.com/2018/11/extracting-apple-health-data-from-icloud/
+
 # started with Hadley travel.r from https://github.com/hadley/vis-eda/blob/master/travel.R
 
 library(tidyverse)
