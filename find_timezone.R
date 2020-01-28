@@ -33,17 +33,19 @@ local_to_sys_time <- function(datetime, timezone) {
 # is after 03:25 and (before the return to New York) it needs
 # to be adjusted to local Paris time rather than to New York time.
 
-# UTC_to_clock_by_tz <- function(dt, time_zone) {
-#   # adjust a vector of datetime to a specific time zone and report as though it were utc
-#   tz(dt) <- .sys.timezone    # make sure vector is set to my current local time zone
-#   utc <- with_tz(dt, tzone = "UTC")   # what is the datetime in terms of UTC
-#   # with_tz is the key lubridate function that I am relying on. Handles daylight savings as well.
-#   local <- with_tz(utc, time_zone) # now adjust utc to the time zone I want
-#   tz(local) <- "UTC"    # treat everything as if it were UTC, even if it isn't, because the whole vector has to be one arbitrary time zone when I bind rows together
-#   # Although the vector is marked as UTC, I will treat the hour as being whatever the local
-#   # time was that I experienced then.
-#   return(local)
-# }
+# I will be applying this function to nearly a million times so it's important
+# that it be vectorized and compiled. Vectorized is what really counts.
+UTC_to_clock_by_tz <- function(dt, time_zone) {
+  # adjust a vector of datetime to a specific time zone and report as though it were utc
+  tz(dt) <- .sys.timezone    # make sure vector is set to my current local time zone
+  utc <- with_tz(dt, tzone = "UTC")   # what is the datetime in terms of UTC
+  # with_tz is the key lubridate function that I am relying on. Handles daylight savings as well.
+  local <- with_tz(utc, time_zone) # now adjust utc to the time zone I want
+  tz(local) <- "UTC"    # treat everything as if it were UTC, even if it isn't, because the whole vector has to be one arbitrary time zone when I bind rows together
+  # Although the vector is marked as UTC, I will treat the hour as being whatever the local
+  # time was that I experienced then.
+  return(local)
+}
 
 raw_to_local <- function(datetime, timezone) {
   if (is.character((datetime))) datetime = ymd_hms(datetime)
