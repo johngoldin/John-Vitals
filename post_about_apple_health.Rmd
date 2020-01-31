@@ -571,6 +571,18 @@ the same type. A shorter interval indicates that a measurement is being
 made more frequently. This provides some useful diagnostic
 information about the nature of the measurements.
 
+...this text is out of order....       
+I also calculate two ways of measuring the frequency of measurements. First there is `span` which is the
+time in seconds between the start_date and the end_date. The second version is `interval`
+which is the the time between `start_date` and the next measurement of the same type
+(using the `lead` function).
+For most cases of activie energy and basal energy, `span` and `interval` have the
+same value because the the next `end_date` has the same value as the next
+`start_date`. We
+will see below how `interval` can be an important diagnostic tool. For heart rate readings
+the start and the end time are the same. For that data item, `span` is calculated
+the same way as `interval`.
+
 How frequently are measurements taken? As I dove into this question in some
 detail, I realized frequency is different during workouts.
 A **workout** is a feature of the Apple Watch. You start a 
@@ -609,6 +621,19 @@ data to the `workout_df`. The code breaks the day into three periods:
 earliest_watch_data <- min(health_df$start_date[str_detect(health_df$sourceName, "Watch")], na.rm = TRUE)
 # pick out the intra-day movement items plus heart rate
 movement <- health_df %>% 
+  # previously this code was in the previous section
+      mutate(span = case_when(
+      (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
+      TRUE ~ as.numeric(end_date) - as.numeric(start_date)),
+    ) %>% 
+    mutate(interval = case_when(
+      (type == "HKQuantityTypeIdentifierHeartRate") & (lag(type) == type) ~ as.numeric(start_date) - as.numeric(lag(start_date)),
+      (lead(type) == type) ~ lead(as.numeric(start_date)) - as.numeric(start_date),
+      TRUE ~ NA_real_
+    ))  %>% 
+    # mutate(interval = ifelse(lag(type) == type, as.numeric(start_date) - as.numeric(lag(start_date)),
+    #        NA_real_)) %>% 
+# this ends the section of code that was moved from previous section
   filter(as_date(start_date) >= ymd("2017-10-03"),
     type %in% c("HKQuantityTypeIdentifierActiveEnergyBurned", "HKQuantityTypeIdentifierBasalEnergyBurned", "HKQuantityTypeIdentifierDistanceWalkingRunning",
                      "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierStepCount",

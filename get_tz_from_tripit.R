@@ -93,7 +93,7 @@ air_trips <- save_all_trips %>% map("AirObject") %>% map("Segment") %>% flatten(
 flying <- trip_ids %>% map_dfr(GET_air_mem)
 # save(flying, file = "flying.RData")
 
-memoise::forget(GET_air_mem)
+# memoise::forget(GET_air_mem)
 
 flying2 <- flying %>%
   mutate(start = ymd_hms(paste0(start_date, start_time)),
