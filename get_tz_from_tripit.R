@@ -239,4 +239,14 @@ ggplot(us_totals, aes(lon, lat)) +
   hrbrthemes::theme_ipsum()
 
 ggsave("travel-example.png", width = 8, height = 5.5)
+
+
+adt <- as_datetime("2018-06-10 17:09:06")
+
+# to get the time from the datetime
+as.integer(difftime(adt, floor_date(adt, "day"), unit = "secs")) %>% hms::hms()
 }
+
+
+
+

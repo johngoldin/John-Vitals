@@ -11,16 +11,16 @@
 
 # I think what is stored in the health database is UTC time. But what is exported and
 # displayed is the local time zone of the phone at the time of the export of the display.
-# My activity app says that I started my walk on 9/1/2019 at 05:51:58 while I was in 
+# My activity app says that I started my walk on 9/1/2019 at 05:51:58 while I was in
 # England. Because of daylight savings (or British Summer Time), I was one hour later
-# than UTC time while I was in England so that's four hours different than EDT. 
+# than UTC time while I was in England so that's four hours different than EDT.
 # So I think the displayed start time of the walk of 05:51:58 actually corresponds to
-# an actual clock time for the watch of 09:51:58. I need to get the UTC time by 
-# adding four hours. 
+# an actual clock time for the watch of 09:51:58. I need to get the UTC time by
+# adding four hours.
 
 require("compiler")
 UTC_to_my_clock_time <- function(dt) {
-  
+
   # lubridates by default leaves tz blank which is same as UTC
   # dt <- as_datetime(str_sub(as.character(dt_string), 1, 19))
   # dt <- as_datetime(dt_string)
@@ -58,7 +58,7 @@ a_UTC_vector_to_clock_time <- cmpfun(a_UTC_vector_to_clock_time)
 # UTC_to_my_clock_time("2019-09-20 17:00:00")
 # UTC_to_my_clock_time("2019-09-01 05:51:58")
 # UTC_to_my_clock_time("2019-09-05 12:09:05")
-# sept <- df_workout %>% filter(month(startDate) == 9, year(startDate) == 2019) 
+# sept <- df_workout %>% filter(month(startDate) == 9, year(startDate) == 2019)
 # x1 <- map_dbl(sept$startDate, UTC_to_my_clock_time) %>% as_datetime()
 # x2 <- map_dbl(sept$endDate, UTC_to_my_clock_time) %>% as_datetime()
 # x1alt <- a_UTC_vector_to_clock_time(sept$startDate)
@@ -89,32 +89,27 @@ get_my_time_zone <- function(dt) {
 }
 get_my_time_zone <- cmpfun(get_my_time_zone)
 
-UTC_to_clock_by_tz <- function(dt, time_zone) {
-  
-  # lubridates by default leaves tz blank which is same as UTC
-  # dt <- as_datetime(str_sub(as.character(dt_string), 1, 19))
-  # dt <- as_datetime(dt_string)
-  # What I'm going for is the time zone used by my watch. But that depends on
-  # exactly when my watch adjusted to the local time zone so it can' be accurate
-  # to the minute. I'm assuming my watch got the local clock time about the
-  # same time as the scheduled arrival for my flight.
-  tz(dt) <- .sys.timezone
-  utc <- with_tz(dt, tzone = "UTC")
-  local <- with_tz(utc, time_zone)
-  tz(local) <- "UTC"
+exported_time_to_local <- function(dt, time_zone, tz_of_export = Sys.timezone()) {
+  # adjust a vector of datetime to a specific time zone and report as though it were utc
+  tz(dt) <- tz_of_export    # make sure vector is set to my current local time zone
+  # with_tz is the key lubridate function that I am relying on. Handles daylight savings as well.
+  local <- with_tz(dt, time_zone) # now adjust utc to the time zone I want
+  tz(local) <- "UTC"    # treat everything as if it were UTC, even if it isn't, because the whole vector has to be one arbitrary time zone when I bind rows together
+  # Although the vector is marked as UTC, I will treat the hour as being whatever the local
+  # time was that I experienced then.
   return(local)
 }
 
-# sept2 <- sept %>% 
+# sept2 <- sept %>%
 #   mutate(date1 = map_dbl(endDate, UTC_to_my_clock_time) %>% as_datetime(),
-#          time_zone = get_my_time_zone(endDate)) %>% 
+#          time_zone = get_my_time_zone(endDate)) %>%
 #   group_by(time_zone) %>%
 #   mutate(date2 = UTC_to_clock_by_tz(endDate, first(time_zone)))
-#   
+#
 # system.time(df_workout2 <- df_workout %>%      # 13.35 seconds
-#               mutate(date1 = map_dbl(endDate, UTC_to_my_clock_time) %>% 
+#               mutate(date1 = map_dbl(endDate, UTC_to_my_clock_time) %>%
 #                        as_datetime()))
-# 
+#
 # system.time(df_workout3 <- df_workout %>%       # 0.073 seconds
 #               mutate(time_zone = get_my_time_zone(endDate)) %>%
 #               group_by(time_zone) %>%

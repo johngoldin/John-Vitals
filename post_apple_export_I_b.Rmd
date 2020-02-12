@@ -1,5 +1,5 @@
 ---
-title: "Apple Export Part I: Importing the Data and Adjusting the Time Stamps"
+title: "Apple Export Part I: Importing the Export and Adjusting the Time Stamps"
 author: "John Goldin"
 date: '2020-02-12'
 description: 'Export Apple Health Export data and then import it into R. The focus in Part I is on how to adjust time stamps to extract local (clock) time given changes in daylight savings and travel across time zones.'
@@ -7,7 +7,7 @@ categories:
   - quantified-self
   - R
 tags:
-  - quantified-=self
+  - quantified-self
   - Apple-Health-Export
   - R
 slug: importing-apple-health-export
@@ -16,7 +16,7 @@ type: post
 highlight: no
 draft: yes
 output: 
-  html_document:
+  blogdown::html_page:
     keep_md: yes
 ---
 
@@ -246,13 +246,13 @@ Now we shall dive deep into the weeds.
 Each item in the records of the health dataset has a creation, start, and end time stamp.
 In the export dataset
 they appear as a character string that looks like this: "2019-04-10 08:10:34 -0500". 
-There is "-0500" on the end
-because as I write this local time is Eastern Standard Time which is five hours 
+The "-0500" on the end
+is because as I write this local time is Eastern Standard Time which is five hours 
 earlier than UTC (universal
 time code). At first I thought the time code offset at the end of the text string would take care of everything. 
 In fact, it is useless.
 As near as I can tell, the internal data has no indication of time zone.[^1]
-The UTC offset is attached to the date and time information when the data is exported. 
+The UTC offset is attached to the datetime information when the data is exported. 
 Every single time stamp in the exported dataset has the same "-0500" offset,
 which merely represent my local offset at the time the export was done. 
 When I exported the data during Eastern Daylight Savings, all of the offsets appeared as "-0400". 
@@ -404,15 +404,15 @@ with each air object. For example, a trip might be two connecting flights to get
 destination and two flights to return home, each represented by a "segment". 
 I always feel like I'm a few steps away from thorough understanding of
 `purrr` and tend to rely on a certain amount of trial and error to get a sequence of `flatten`
-and `map` call that extract what I need. The code is available from [a GitHub repo I made to support
-this post](https://github.com/johngoldin/applehealth1/tree/master/R).
+and `map` call that extract what I need. The code is available from a repo I made to support
+this post: [https://github.com/johngoldin/applehealth1/R/tripit_functions.R].
 
 I end up with a 
 data frame that has the scheduled departure and arrival for each fight and conveniently provides
 the time zone for each airport. Note that in practice this data might not be perfect. It is scheduled
 flights only and would not account for cancelled flights or even the time of a delayed flight. So keep
 that in mind before you
-try to use this data to examine something detailed such as whether your heart rate is elevated during takeoffs and landings.
+try to use this data to examine whether your heart rate is elevated during takeoffs and landings.
 
 I took a quick detour and explored whether I could use the FlightAware API to get the actual arrival
 times. It is now easy to get free access to limited FlightAware data. But the API calls are
@@ -439,7 +439,7 @@ I get one trip at a time, fetch the
 air segments, and then bind them together with `purrr::map_dfr`. I
 fetched more than the minimum columns I needed partly out of curiosity over
 what was in the TripIt data. It's interesting to see all my flight information
-in one table, although much is not directly relevant to the task at hand.
+in one table, althougn much is not directly relevant to the task at hand.
 
 ```{r tripit_stuff, echo = FALSE, eval = FALSE}
 print(load(paste0(path_saved_export, "save_all_trips.RData")))
@@ -692,66 +692,6 @@ should be used for sorting by time. The prefix "local" has local time as was sho
 measurement was recorded. Local time and date is what we need if we want to examine time during the day.
 For `health_df` there is also a column called `start_time` which is just the time of day, without date, expressed as hh:mm:ss.
 
-Let's do a plot to show the difference between looking at time of day in terms of UTC versus local time. The density
-plot below shows how the two scales overlap. I live in the Eastern Time Zone which is five hours later than
-UTC during standard
-time and four hours later during daylight savings. 
-As a compromise I
-subtracted 4.5 hours from the UTC time of day to make the distributions fit on the same scale. 
-The red scale shows the distribution of observations in 
-the export data in terms of UTC time of day and the blue scale shows local time. The blue scale corresponds more
-to my subjective experience of time of day. You can see that the red distribution is "fatter" during the period from
-4AM to 8AM than is the blue scale. That's primarily because of walking trips in England that are not in
-the Eastern Time. Observations that appear to be at 4AM in terms of UTC - 4.5 are probably happening in
-British Summer Time (because I'm on a hike in England during the summer) which is actually UTC + 1. In terms
-of my experience of local time, they are happening when my watch says 9AM. (The dataset also includes
-a 10 day walking holiday in Greece which is another two hours farther east than England.)
-
-If one looks at sleep time between 00:00 and 06:00, the Local Time distribution (blue) shows a
-consistent pattern of fewer observations because of less activity. A larger proportion of my
-activity outside of the Eastern Time Zone was in Europe rather than in Pacific Time and that's why
-the UTC distribution seems shifted to the left relative to Local Time. Also, Local Time is responding to 
-daylight savings changes and UTC is not. I think that explains why the peaks before and after 
-lunch time are higher in the Local Time distribution than in UTC. I'm actually fairly rigid about when
-I take time for lunch (and presumably reduce my physical activity) and taking daylight savings
-into account makes that more clear.
-
-In summary, if I did not correct for time zone and daylight savings the general bi-modal pattern would 
-still be apparent. But the translation into local time makes the time of day pattern more clear
-and more accurate, especially if one focuses on hours when I would expect to be asleep.
-
-```{r hist_by_time, echo = FALSE}
-a_sample <- sample_frac(health_df, size = 0.1)
-time_type <- a_sample %>% 
-  mutate(start_time = (as.integer(difftime(utc_start - hours(4) - minutes(30), floor_date(utc_start - hours(5) - minutes(30), "day"), unit = "secs"))) %>% hms::hms()) %>% 
-  select(start_time) %>% 
-  mutate(type = "UTC Time") %>% 
-  bind_rows(
-    a_sample %>% select(start_time) %>% mutate(type = "Local Time")
-  ) %>% mutate(type = fct_rev(factor(type)))
-for_labels <- tribble(
-  ~type,  ~start_time, ~y,  ~label,
-  "UTC Time",  4*3600, 2e-05, "UTC Time - 4.5 hours",
-  "Local Time", 19*3600, 2e-05, "Local Time"
-)
-p<-ggplot(time_type, aes(x=start_time, fill=type, color = type)) +
-  geom_density(alpha=0.4, adjust = 0.5)+ xlab("time of observation") +
-   # geom_histogram(aes(y=..density..), alpha=0.5,
-   #              position="identity", bins = 24)+
-  ggtitle("Distribution of Observations by Time of Day (UTC vs Local Time)") +
-  theme(legend.position="top") +
-  scale_x_time(breaks= seq(0, 3600*24, 3600*4), labels = scales::time_format("%H:%M"), 
-               minor_breaks = seq(0, 3600*24, 3600)) +
-  theme(axis.title.y=element_blank(),
-        axis.text.y=element_blank(),
-        axis.ticks.y = element_blank(),
-        legend.position = "none")
- p <- p + geom_text(data = for_labels, 
-               aes(x = start_time, y = y, label = label, color = type), 
-               show.legend = FALSE, size = 5.5, vjust = 0) 
- print(p)
-```
-
 ## Apple, If You're Listening...
 
 There may be a relatively simple item of data that Apple could add to the health data that would
@@ -781,4 +721,5 @@ the machinations to adjust time stamps to retrieve local time. But for most peop
 an issue that can be ignored, meaning the bulk of Part I is not relevant for most people. 
 In Part II I will examine some of the data elements in more detail and give
 some examples using the data.
+
 
