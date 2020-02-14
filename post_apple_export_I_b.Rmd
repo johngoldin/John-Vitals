@@ -7,7 +7,7 @@ categories:
   - quantified-self
   - R
 tags:
-  - quantified-self
+  - quantified-=self
   - Apple-Health-Export
   - R
 slug: importing-apple-health-export

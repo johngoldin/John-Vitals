@@ -1,10 +1,11 @@
 ---
 title: "Apple Export Part I: Importing the Data and Adjusting the Time Stamps"
 author: "John Goldin"
-date: '2020-02-12'
+date: '2020-02-13'
 description: 'Export Apple Health Export data and then import it into R. The focus in Part I is on how to adjust time stamps to extract local (clock) time given changes in daylight savings and travel across time zones.'
 categories:
   - quantified-self
+  - Apple-Health-Export
   - R
 tags:
   - quantified-=self
@@ -43,11 +44,11 @@ see a clickable line "Export All Health Data", as shown in the second screenshot
 
 <div style="float: left; width: 50%; padding: 5px;">
 Tap upper right icon:<br>
-<img src="img/health_app.PNG" alt="Health app" height="333" width="187">
+<img src="health_app.PNG" alt="Health app" height="333" width="187">
 </div>
 <div style="float: right; width: 50%; padding: 5px;">
 Scroll to very bottom:<br>
-<img src="img/health_export_dialog.PNG" alt="Health Export" height="333" width="187">
+<img src="health_export_dialog.PNG" alt="Health Export" height="333" width="187">
 </div>
 
 Once you click OK to go ahead with the export, it may take a significant amount of time.
@@ -98,7 +99,7 @@ library(memoise)
 path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/saved_health_export_data/"
 path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
 source(paste0(path_to_healthexport1, "find_timezone.R"))
-source(paste0(path_to_healthexport1, "tripit_functions.R"))
+# source(paste0(path_to_healthexport1, "tripit_functions.R"))
 ```
 ```{r import_xml, echo = TRUE, cache = TRUE, messages = FALSE}
 if (file_exists("~/Downloads/export.zip")) {

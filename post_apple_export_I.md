@@ -1,10 +1,11 @@
 ---
 title: "Apple Export Part I: Importing the Data and Adjusting the Time Stamps"
 author: "John Goldin"
-date: '2020-02-12'
+date: '2020-02-13'
 description: 'Export Apple Health Export data and then import it into R. The focus in Part I is on how to adjust time stamps to extract local (clock) time given changes in daylight savings and travel across time zones.'
 categories:
   - quantified-self
+  - Apple-Health-Export
   - R
 tags:
   - quantified-=self
@@ -41,11 +42,11 @@ see a clickable line "Export All Health Data", as shown in the second screenshot
 
 <div style="float: left; width: 50%; padding: 5px;">
 Tap upper right icon:<br>
-<img src="img/health_app.PNG" alt="Health app" height="333" width="187">
+<img src="health_app.PNG" alt="Health app" height="333" width="187">
 </div>
 <div style="float: right; width: 50%; padding: 5px;">
 Scroll to very bottom:<br>
-<img src="img/health_export_dialog.PNG" alt="Health Export" height="333" width="187">
+<img src="health_export_dialog.PNG" alt="Health Export" height="333" width="187">
 </div>
 
 Once you click OK to go ahead with the export, it may take a significant amount of time.
@@ -692,7 +693,7 @@ I get one trip at a time, fetch the
 air segments, and then bind them together with `purrr::map_dfr`. I
 fetched more than the minimum columns I needed partly out of curiosity over
 what was in the TripIt data. It's interesting to see all my flight information
-in one table, althougn much is not directly relevant to the task at hand.
+in one table, although much is not directly relevant to the task at hand.
 
 
 
@@ -998,7 +999,7 @@ to my subjective experience of time of day. You can see that the red distributio
 the Eastern Time. Observations that appear to be at 4AM in terms of UTC - 4.5 are probably happening in
 British Summer Time (because I'm on a hike in England during the summer) which is actually UTC + 1. In terms
 of my experience of local time, they are happening when my watch says 9AM. (The dataset also includes
-a 10 day walking holidy in Greece which is another two hours farther east than England.)
+a 10 day walking holiday in Greece which is another two hours farther east than England.)
 
 If one looks at sleep time between 00:00 and 06:00, the Local Time distribution (blue) shows a
 consistent pattern of fewer observations because of less activity. A larger proportion of my
@@ -1006,12 +1007,12 @@ activity outside of the Eastern Time Zone was in Europe rather than in Pacific T
 the UTC distribution seems shifted to the left relative to Local Time. Also, Local Time is responding to 
 daylight savings changes and UTC is not. I think that explains why the peaks before and after 
 lunch time are higher in the Local Time distribution than in UTC. I'm actually fairly rigid about when
-I take time for lunch (and presumably reduce my phyical activity) and taking daylight savings
+I take time for lunch (and presumably reduce my physical activity) and taking daylight savings
 into account makes that more clear.
 
-In summary, if did not correct for time zone and daylight savings the general bi-modal pattern would 
+In summary, if I did not correct for time zone and daylight savings the general bi-modal pattern would 
 still be apparent. But the translation into local time makes the time of day pattern more clear
-and more accurate, especially if one focuses on hours when I would expectd to be asleep.
+and more accurate, especially if one focuses on hours when I would expect to be asleep.
 
 ![](post_apple_export_I_files/figure-html/hist_by_time-1.png)<!-- -->
 
