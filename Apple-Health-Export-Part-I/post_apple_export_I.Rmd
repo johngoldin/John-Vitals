@@ -533,7 +533,7 @@ arrivals <- flying %>%
   mutate(utc_until = lead(utc_arrive), until_timezone = lead(local_timezone))
   arrivals$utc_until[nrow(arrivals)] <- with_tz(now(), "UTC")
   arrivals$until_timezone[nrow(arrivals)] <- Sys.timezone() # I don't really need this.
-# Check that I have arrivals set up properly so that my last arrival is in my home time zone
+# Check that I have arrivals set up properly so that my last arrival is in my home time zone, otherwise warn
 if (arrivals$local_timezone[nrow(arrivals)] != Sys.timezone()) warning("Expected to end in Sys.timezone:", 
                                                        Sys.timezone(), " rather than ",
                                                        arrivals$local_timezone[nrow(arrivals)])
