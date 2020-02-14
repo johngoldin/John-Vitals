@@ -4,6 +4,8 @@ export*.zip
 apple_health_export*
 user_measurements*
 
+# mac desktop stuff
+.DS_Store
 
 inst/doc
 # Excel workbooks
@@ -18,6 +20,10 @@ inst/doc
 .Rapp.history
 # Session Data files
 .RData
+/*.RData
+/*.rdb
+/*.rda
+
 # Example code in package build process
 *-Ex.R
 # Output files from R CMD build
