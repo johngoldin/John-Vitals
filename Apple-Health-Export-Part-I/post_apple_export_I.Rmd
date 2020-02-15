@@ -424,6 +424,8 @@ my past flights.
 # get list of trips
 trips_list <- GET_tripit("https://api.tripit.com/v1/list/trip/past/true/false")
 trip_ids <- trips_list$Trip %>% map_chr("id")
+# flying <- trip_ids %>% map_dfr(GET_air_mem)
+# save(flying, file = paste0(path_saved_export, "flying.RData"))
 # save_all_trips <- trip_ids %>% map
 # first get flights (i.e., segments) from all air trips
 air_trips <- save_all_trips %>% purrr::map("AirObject") %>% purrr::map("Segment") %>% flatten()
@@ -446,15 +448,13 @@ in one table, although much is not directly relevant to the task at hand.
 print(load(paste0(path_saved_export, "save_all_trips.RData")))
 air_trips <- save_all_trips %>% map("AirObject") %>% map("Segment") %>% flatten()
 
-# flying <- trip_ids %>% map_dfr(GET_air_mem)
-# save(flying, file = paste0(path_saved_export, "flying.RData"))
 load(paste0(path_saved_export, "flying.RData"))
 
 # memoise::forget(GET_air_mem)
 
-flying2 <- flying %>%
-  mutate(start = ymd_hms(paste0(start_date, start_time)),
-         end = ymd_hms(paste0(end_date, end_time)))
+# flying2 <- flying %>%   # don't need this, right?
+#   mutate(start = ymd_hms(paste0(start_date, start_time)),
+#          end = ymd_hms(paste0(end_date, end_time)))
 ```
 ```{r get_air_trips}
 GET_air <- function(trip_id) {
@@ -680,7 +680,7 @@ workout_df <- workout_df %>%
   ungroup()
 # I'm going to focus on health_df and workout_df, but I could adjust times in the other df's as well
 ```
-```{r interim_save, echo = FALSE}
+```{r interim_save, echo = FALSE, eval = FALSE}
 # Save some stuff so that I can skip the slow steps above:
 save(health_xml, health_df, activity_df, workout_df, clinical_df, 
      file = paste0(path_saved_export,"save_processed_export.RData"))

@@ -1,7 +1,8 @@
 ---
-title: "Apple Export Part I: Importing the Data and Adjusting the Time Stamps"
+title: "Apple Health Export Part I"
+subtitle: "Importing the Data and Adjusting the Time Stamps"
 author: "John Goldin"
-date: '2020-02-13'
+date: '2020-02-14'
 description: 'Export Apple Health Export data and then import it into R. The focus in Part I is on how to adjust time stamps to extract local (clock) time given changes in daylight savings and travel across time zones.'
 categories:
   - quantified-self
@@ -11,7 +12,6 @@ tags:
   - quantified-=self
   - Apple-Health-Export
   - R
-slug: importing-apple-health-export
 layout: post
 type: post
 highlight: no
@@ -774,7 +774,7 @@ arrivals <- flying %>%
   mutate(utc_until = lead(utc_arrive), until_timezone = lead(local_timezone))
   arrivals$utc_until[nrow(arrivals)] <- with_tz(now(), "UTC")
   arrivals$until_timezone[nrow(arrivals)] <- Sys.timezone() # I don't really need this.
-# Check that I have arrivals set up properly so that my last arrival is in my home time zone
+# Check that I have arrivals set up properly so that my last arrival is in my home time zone, otherwise warn
 if (arrivals$local_timezone[nrow(arrivals)] != Sys.timezone()) warning("Expected to end in Sys.timezone:", 
                                                        Sys.timezone(), " rather than ",
                                                        arrivals$local_timezone[nrow(arrivals)])
