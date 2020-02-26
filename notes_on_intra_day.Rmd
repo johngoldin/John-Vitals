@@ -1,0 +1,33 @@
+---
+title: "Notes on Intra-day Apple Health Export"
+output: html_notebook
+---
+
+See [Harris-Bennett formula for basal energy](https://en.wikipedia.org/wiki/Harris–Benedict_equation)
+
+The Harris–Benedict equations revised by [Mifflin and St Jeor in 1990](https://pubmed.ncbi.nlm.nih.gov/2305711-a-new-predictive-equation-for-resting-energy-expenditure-in-healthy-individuals/):[4]
+
+Men	BMR = (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
+Women	BMR = (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) - 161
+
+for me that would be 10 * pounds * 0.4536 + ( 6.25 * 68.5 * 2.54) - (5 * 70) + 5
+
+```{r}
+bmr <- (10 * 146 * 0.4536) + ( 6.25 * 68.5 * 2.54) - (5 * 70) + 5
+print(bmr)
+print(bmr * 1.76)
+
+bmr / (24 * 60 * 60) # calories per second
+```
+
+basal energy per day by version
+
+```{r}
+intra %>% 
+  filter(type == "Basal_Energy") %>% 
+  group_by(sourceVersion) %>% 
+  summarise(start = min(local_start, na.rm = TRUE), end = max(local_start, na.rm = TRUE),
+            days = length(unique(date)), total_basal = sum(value, na.rm = TRUE), mean_basal = total_basal / days)
+```
+
+

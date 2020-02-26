@@ -14,9 +14,9 @@ library(httr)
 library(fs)
 library(memoise)
 
+path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/"
+path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
 system.time({
-  path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/"
-  path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
   source(paste0(path_to_healthexport1, "find_timezone.R"))
 
   if (file_exists("~/Downloads/export.zip")) {
