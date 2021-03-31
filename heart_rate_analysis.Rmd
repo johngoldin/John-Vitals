@@ -65,7 +65,7 @@ distance <- df %>%
 ```{r create_plot, echo = FALSE}
 plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL) {
   print(hour_max)
-  adf <- adf %>% filter(type == "HKQuantityTypeIdentifierHeartRate", date %in% adate) %>%
+  adf <- adf %>% filter(type %in% c("HKQuantityTypeIdentifierHeartRate", "HeartRate"), date %in% adate) %>%
     arrange(start_date)
   if (!is.null(hour_max)) adf <- adf %>% filter(hour(start_date) <= hour_max)
   if (!is.null(hour_min)) adf <- adf %>% filter(hour(start_date) >= hour_min)
@@ -94,12 +94,49 @@ https://www.cnn.com/2019/03/16/health/apple-watch-heart-rate-arrhythmia-afib-stu
 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6111985/
 
 ```{r}
+p <- plot_day(health_df, c(ymd("2020-10-25")), events = TRUE, hour_min = 8, hour_max = 15)
+
+days_events <- tribble(
+  ~x, ~lab, 
+  as_datetime("2020-10-25 12:30:00"), "ECG",
+  as_datetime("2020-10-25 13:47:00"), "ECG"
+)
+ynhh <- tribble(
+  ~x, ~lab,
+  as_datetime("2020-10-25 14:04:00"),
+  "arrive at ER"
+)
+p <- p  + geom_segment(data = days_events, aes(x = x, xend = x, y = 154, yend = 159.3), colour = "orange", arrow = arrow(angle = 20, ends = "first", length = unit(0.03, "npc"))) + 
+  geom_text(data = days_events, aes(x = x, y = 155, label = lab), hjust = 0.5, color = "orange", nudge_y = 5, size = 2) +
+    geom_segment(data = ynhh, aes(x = x, xend = x, y = 154, yend = 159.3), colour = "blue", arrow = arrow(angle = 20, ends = "first", length = unit(0.03, "npc"))) +
+  geom_text(data = ynhh, aes(x = x, y = 155, label = lab), hjust = 0, color = "blue", nudge_y = 5, size = 3) +
+  annotate("label", y = 130, x = as_datetime("2020-10-25 11:11:00"),
+           xmin =  as_datetime("2020-10-25 10:41:00"), xmax = as_datetime("2020-10-25 11:50:00"),
+           label = "walk in Westwoods", size = 3)
+ggsave("pdfs/ER visit John Goldin 10-25-2020.pdf", width = 6.5, height = 4.5 )
+
+ptoday <- plot_day(health_df, c(today()), events = TRUE, hour_min = 8, hour_max = 15)
+
+
+# health_df %>% filter(as_date(start_date) ==  ymd("2019-02-16")) %>% arrange(start_date) %>% View()
+```
+
+
+
+```{r}
 plot_day(health_df, ymd("2019-02-15"), events = TRUE, hour_min = 1, hour_max = 2) %>% print()
 
 # health_df %>% filter(as_date(start_date) ==  ymd("2019-02-16")) %>% arrange(start_date) %>% View()
 ```
 
 
+```{r}
+plot_day(health_df, ymd("2020-10-25"),  hour_min = 8, hour_max = 15) %>% print()
+plot_day(health_df, ymd("2020-11-01"),  hour_min = 6, hour_max = 12) %>% print()
+
+
+# health_df %>% filter(as_date(start_date) ==  ymd("2019-02-16")) %>% arrange(start_date) %>% View()
+```
 
 
 

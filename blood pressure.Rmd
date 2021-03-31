@@ -14,8 +14,11 @@ library("lubridate")
 library(tidyverse)
 ```
 
-```{r read_from_csv}
+```{r rely_on_health_df}
 source("R/create_bp_dataset.R")
+```
+
+```{r read_from_csv}
 # Based on blood pressure data in Blood Pressure.numbers in the Personal folder in Dropbox.
 # Exported to csv in the John Vitals folder.
 bp_spreadsheet <- read_csv("Blood Pressure.csv", col_types = cols(
@@ -59,7 +62,7 @@ bp1$type <- factor(bp1$type, levels = type_levels)
 
 bp_group <- filter(bp1, is.na(source) | ((source != "vitals") & (source != "exclude") & (source != "wrist-odd"))) %>%
   group_by(type, source, time_group) %>% 
-  summarise(value = mean(value), when = mean(when)) %>%
+  summarise(value = mean(value), when = mean(when), n = n()) %>%
   mutate(date = as_date(when))
 bp_group$type <- factor(bp_group$type, levels = type_levels)
 
@@ -95,10 +98,12 @@ bp_group4 <- bp_group %>%
 # bp_group2_all <- gather(bp_group_all, type, value, systolic, diastolic, pulse)
 
 bp_ranges <- data.frame(h = c(135, 85, NA), type = c("systolic", "diastolic", "pulse"))
-events_base <- tibble(when = c("11/23/2015 09:00 AM", "01/19/2016 09:45 AM", "01/28/2016 02:00 PM", "07/07/2017 10:00 AM",
-                                   "01/02/2018 10:00 AM", "02/25/2019 05:30 AM"), 
-                          what = c("Young", "Mohs", "Persing", "Close", "Close", "ER"),
-                     type = "systolic")
+events_base <- tibble(when = c("11/23/2015 09:00 AM", "01/19/2016 09:45 AM", 
+                               "01/28/2016 02:00 PM", "07/07/2017 10:00 AM",
+                               "01/02/2018 10:00 AM", "02/25/2019 05:30 AM",
+                               "10/25/2020 01:30 PM"), 
+                      what = c("Young", "Mohs", "Persing", "Close", "Close", "ER", "ER"),
+                      type = "systolic")
 events_base$when <- parse_datetime(events_base$when, format = "%m/%d/%Y %H:%M %p")
 events_base$y = min(bp_group$value[bp_group$type == "systolic"])
 events_base$yend = events_base$y + 5
@@ -136,11 +141,50 @@ chart_meanperday <- chart_meanperday + geom_point() + facet_wrap(~ type, ncol = 
 chart_meanperday <- chart_meanperday + geom_segment(data = events, aes(x = when, xend = when, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
 chart_meanperday <- chart_meanperday + geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
   facet_wrap(~ type, ncol = 1, scales = "free_y") 
-chart_meanperday <- chart_meanperday + scale_x_datetime(date_breaks = "3 months", date_minor_breaks = "1 months", labels = month_year)
+chart_meanperday <- chart_meanperday + scale_x_datetime(date_breaks = "4 months", date_minor_breaks = "1 months", labels = month_year)
 chart_meanperday <- chart_meanperday + theme(axis.text.x = element_text(size = 8))
 chart_meanperday <- chart_meanperday + theme(strip.text.x = element_text(size = 12, face = "bold"))
 
-ggsave("blood pressure plot1.pdf", plot = chart_meanperday, width = 10, height = 7)
+ggsave("pdfs/blood pressure plot1.pdf", plot = chart_meanperday, width = 10, height = 7)
+```
+
+```{r bp_per_day_recent}
+cutoff <- max(bp_group4$when, na.rm = TRUE) - days(180)
+chart_meanperday_recent <- ggplot(data = bp_group4 %>% filter(when >= cutoff), aes(x = when, y = value)) 
+chart_meanperday_recent <- chart_meanperday_recent + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
+chart_meanperday_recent <- chart_meanperday_recent + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Mean of Grouped Readings by Day (last 180 days)", subtitle = "green dots indicate in-office vitals") + 
+  xlab(NULL) + ylab(NULL) +
+  geom_smooth(data = bp_group4 %>% filter(when >= cutoff), span = 0.10) 
+chart_meanperday_recent <- chart_meanperday_recent + geom_segment(data = events %>% filter(when >= cutoff), 
+                                                    aes(x = when, xend = when, y = y, yend = yend), 
+                                                    colour = "red", arrow = arrow(length = unit(0.03, "npc")))
+chart_meanperday_recent <- chart_meanperday_recent + geom_point(data = filter(bp1, source == "vitals", when >= cutoff), colour = "Green") + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") 
+chart_meanperday_recent <- chart_meanperday_recent + scale_x_datetime(date_breaks = "2 months", date_minor_breaks = "1 months", labels = month_year)
+chart_meanperday_recent <- chart_meanperday_recent + theme(axis.text.x = element_text(size = 8))
+chart_meanperday_recent <- chart_meanperday_recent + theme(strip.text.x = element_text(size = 12, face = "bold"))
+
+ggsave("pdfs/blood pressure recent.pdf", plot = chart_meanperday_recent, width = 10, height = 7)
+```
+
+```{r with_n}
+bp_group3 <- bp_group3 %>% mutate(multiples = (n > 1))
+chart_with_n <- ggplot(data = bp_group3, aes(x = when, y = value)) 
+chart_with_n <- chart_with_n + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
+chart_with_n <- chart_with_n + geom_point(aes(colour = factor(multiples)), size = 0.5) + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
+  xlab(NULL) + ylab(NULL) +
+  geom_smooth(data = bp_group3, span = 0.001) 
+chart_with_n <- chart_with_n + geom_segment(data = events, aes(x = when, xend = when, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
+chart_with_n <- chart_with_n + geom_point(data = filter(bp1, source == "vitals"), colour = "Green",size = 0.6) + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") 
+chart_with_n <- chart_with_n + scale_x_datetime(date_breaks = "3 months", date_minor_breaks = "1 months", labels = month_year)
+chart_with_n <- chart_with_n + theme(axis.text.x = element_text(size = 8))
+chart_with_n <- chart_with_n + theme(strip.text.x = element_text(size = 12, face = "bold"))
+
+
+
 
 if (exists("df_resting_hr") & exists("watch_step_count")) {
   watch_step_count <- watch_step_count %>% 

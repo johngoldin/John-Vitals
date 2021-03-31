@@ -3,6 +3,15 @@ title: "Notes on Intra-day Apple Health Export"
 output: html_notebook
 ---
 
+Outside Online article on watch:
+https://www.outsideonline.com/2006026/apples-fitness-guru-opens-about-watch#close
+(with ABC video of Apple lab)
+
+Apple Watch 6 health and fitness press release
+https://www.apple.com/newsroom/2019/06/watchos-6-advances-health-and-fitness-capabilities-for-apple-watch/
+
+forensic detail about health kit:  https://blog.elcomsoft.com/2019/01/securing-and-extracting-health-data-apple-health-vs-google-fit/
+
 See [Harris-Bennett formula for basal energy](https://en.wikipedia.org/wiki/Harris–Benedict_equation)
 
 The Harris–Benedict equations revised by [Mifflin and St Jeor in 1990](https://pubmed.ncbi.nlm.nih.gov/2305711-a-new-predictive-equation-for-resting-energy-expenditure-in-healthy-individuals/):[4]
@@ -10,10 +19,10 @@ The Harris–Benedict equations revised by [Mifflin and St Jeor in 1990](https:/
 Men	BMR = (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
 Women	BMR = (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) - 161
 
-for me that would be 10 * pounds * 0.4536 + ( 6.25 * 68.5 * 2.54) - (5 * 70) + 5
+for me that would be 10 * pounds * 0.4536 + ( 6.25 * 69 * 2.54) - (5 * 70) + 5
 
 ```{r}
-bmr <- (10 * 146 * 0.4536) + ( 6.25 * 68.5 * 2.54) - (5 * 70) + 5
+bmr <- (10 * 146 * 0.4536) + ( 6.25 * 69 * 2.54) - (5 * 69) + 5
 print(bmr)
 print(bmr * 1.76)
 
@@ -30,4 +39,147 @@ intra %>%
             days = length(unique(date)), total_basal = sum(value, na.rm = TRUE), mean_basal = total_basal / days)
 ```
 
+Some notes on events:
+walk on 2/19/2020 15:02 to 16:04, no workout
+2/23/2020 14:15 to 15:20 no workout
+2/21/2020 no workout 13:15 to 14:20
+no workout 2/28/2020 13:31 to 14:38
+
+2/25/2020 removed watch 14:12 to 15:50
+# example of long off period: utc 2019-09-18 21:18:55
+2/27/2020 removed watch 08:56 to 09:16
+
+battery ran out of power on 2/28/2020
+
+version 5.0 start 2018-09-22 16:38:35
+version 5.01 2018-09-30 13:34:32
+version 5.1.1  2018-11-18 22:06:21
+
+```{r}
+no_workout <- intra4 %>% 
+  filter(local_date %in% as_date(c("2020-02-19", "2020-02-21", "2020-02-23", "2020-02-28")),
+         ((local_start >= as_datetime("2020-02-19 15:02:00")) & (local_start <= as_datetime("2020-02-19 16:04:00"))) |
+         ((local_start >= as_datetime("2020-02-21 13:15:00"))  & (local_start <= as_datetime("2020-02-21 14:20:00"))) |
+         ((local_start >= as_datetime("2020-02-28 13:31:00"))  & (local_start <= as_datetime("2020-02-28 14:38:00"))) |
+         ((local_start >= as_datetime("2020-02-23 14:15:00"))  & (local_start <= as_datetime("2020-02-23 15:20:00"))))
+feb_workouts <- workout_df %>% filter(year(local_start) == 2020, month(local_start) == 2)
+yes_workout <- intra4 %>% 
+  filter(local_date %in% as_date(c("2020-02-14", "2020-02-16", "2020-02-05", "2020-02-09")),
+         ((local_start >= as_datetime("2020-02-14 09:55:29")) & (local_start <= as_datetime("2020-02-14 11:03:06"))) |
+         ((local_start >= as_datetime("2020-02-16 10:40:22"))  & (local_start <= as_datetime("2020-02-16 11:51:46"))) |
+         ((local_start >= as_datetime("2020-02-05 14:23:00"))  & (local_start <= as_datetime("2020-02-05 15:30:00"))) |
+         ((local_start >= as_datetime("2020-02-09 14:18:00"))  & (local_start <= as_datetime("2020-02-09 15:28:00"))))
+workout_sit <- intra4 %>% 
+  filter(local_date %in% as_date(c("2020-02-29")),
+         ((local_start >= as_datetime("2020-02-29 07:51:00")) & (local_start <= as_datetime("2020-02-29 08:58:00"))))
+require(hms)
+in_office <- intra4 %>% 
+  filter(local_date%in% as_date(c("2020-02-19", "2020-02-24", "2020-02-10", "2020-02-12")),
+        start_time >= as_hms("10:40:00"), start_time <= as_hms("11:50:00"))
+yes_workout$workout <- "Workout"
+no_workout$workout <- "Not Workout"
+in_office$workout <- "In Office"
+workout_sit$workout <- "Workout Sit"
+work <- bind_rows(yes_workout, no_workout, in_office, workout_sit) %>% 
+  filter(type2 != "Exercise_Watch") %>% 
+  mutate(type2 = factor(type2, levels = c("Active_Energy", "Basal_Energy", "Heart_Rate",
+                                        "Steps_Watch", "Walking_Watch", "Climb_Watch")),
+         activity = case_when(workout %in% c("Workout", "Not Workout") ~ "Walking",
+                       workout %in% c("Workout Sit", "In Office") ~ "Sitting"),
+         workout = factor(workout, levels = c("Workout", "Workout Sit", "Not Workout", "In Office"),
+                          labels = c("Walking\nWorkout", "Sitting\nWorkout", "Walk, No\nWorkout", "Sitting No\nWorkout")))
+
+
+raw_table <- work %>% 
+  group_by(type2, workout, activity, local_date) %>% 
+  summarise(total = sum(value), n = n(), interval = median(interval, na.rm = TRUE), span = median(span, na.rm = TRUE)) %>% 
+  mutate(total = case_when(
+    type2 == "Heart_Rate" ~ total/n,
+    TRUE ~ total
+  ))
+
+for_plot <- raw_table %>% group_by(type2, workout, activity) %>% 
+  summarise(amount = mean(total), obs = mean(n), interval =mean(interval, na.rm = TRUE), span = mean(span, na.rm = TRUE)) %>% 
+  mutate(amount = round(amount), obs = round(obs))
+
+#https://stackoverflow.com/questions/30179442/plotting-minor-breaks-on-a-log-scale-with-ggplot/33179099#33179099
+log10_minor_break = function (n_intervals = 9, ...){
+  function(x) {
+    minx         = floor(min(log10(x), na.rm=T))-1;
+    maxx         = ceiling(max(log10(x), na.rm=T))+1;
+    n_major      = maxx-minx+1;
+    major_breaks = seq(minx, maxx, by=1)
+    minor_breaks = 
+      rep(log10(seq(1, n_intervals, by=1)), times = n_major)+
+      rep(major_breaks, each = n_intervals)
+    return(10^(minor_breaks))
+  }
+}
+pmedian <- ggplot(data = for_plot %>% filter(type2 != "Climb_Watch", type2 != "Steps_Watch"), aes(y = interval, x =fct_rev(workout) )) + 
+  facet_wrap(~ type2) + geom_col(aes(fill = fct_rev(activity))) +
+  scale_y_log10(breaks = c(6, 60, 600),minor_breaks = log10_minor_break(6)) +
+  # scale_y_log10(breaks = c(5, 60, 6000),minor_breaks = minor_breaks_n(5)) + 
+  ylab("median interval between observations (log scale, in seconds)") + xlab('"workout" and actitivity')+
+  theme(legend.position="top") +
+  guides(fill=guide_legend(title="Activity: ")) +
+  geom_text(aes(fill = NULL, label = round(interval)), hjust = 1) + 
+  coord_flip() +
+  ggtitle("How Does Interval Between Observations\nRelate to Declared Workout and Amount of Activity")
+```
+```{r display_workout_table, echo = FALSE}
+print(pmedian)
+```
+
+[Apple Developer Guidelines](https://developer.apple.com/design/human-interface-guidelines/watchos/user-interaction/accelerometer-and-gyroscope/)
+Use motion data to offer a tangible benefit to the user. 
+The gathering of motion data should offer a tangible benefit to the user.
+For example, fitness apps use the data to provide feedback about the user’s activity and general health.
+Do not record data simply to have the data.
+
+guy became suspect because of fitness tracking
+https://www.nbcnews.com/news/us-news/google-tracked-his-bike-ride-past-burglarized-home-made-him-n1151761
+
+Let's look at workout and basal energy. Do totals agree.
+```{r total_by_workout}
+y2020 <- intra4 %>% 
+  filter(year(utc_start) == 2020, !is.na(workout_utc_start)) %>% 
+  group_by(workout_utc_start, workout_utc_end) %>% 
+  summarise(basal_sum = sum(value * (type == "BasalEnergyBurned"), na.rm = TRUE),
+            active_sum = sum(value * (type == "ActiveEnergyBurned"), na.rm = TRUE),
+            duration = last(duration)) %>% 
+  left_join(workout_df %>% select(utc_start, utc_end, duration, totalEnergyBurned),
+            by = c("workout_utc_start" = "utc_start", "workout_utc_end" = "utc_end"))
+```
+
+let's do a plot over a one week period of active and basal energy
+
+```{r}
+aday1 <- intra4 %>%
+  filter(local_date == ymd("2020-02-09"))
+aday <- aday1 %>% filter( hour >= 6, hour <= 21, hour >= 12, hour <= 16,
+         type %in% c("ActiveEnergyBurned", "BasalEnergyBurned")) %>%
+  mutate(end_time = as.integer(difftime(local_end, floor_date(local_end, "day"), unit = "secs")) %>% hms::hms()) %>%
+  filter(end_time >= start_time) %>% arrange(type, start_time)
+ggplot(data = aday,
+       aes(x = start_time, y = intensity_raw, colour = type))  +
+  # geom_point(data = aday %>% filter(type == "HeartRate"), size = 0.5) +
+  geom_segment(data = aday %>% filter(type != "HeartRate"),
+               aes(xend = end_time, yend = intensity_raw)) + ylim(0, 2)
+
+pintensity <- ggplot(data = aday,
+       aes(x = start_time, y = intensity, colour = type))  +
+  # geom_point(data = aday %>% filter(type == "HeartRate"), size = 0.5) +
+  geom_segment(data = aday %>% filter(type != "HeartRate"),
+               aes(xend = end_time, yend = intensity, size = span)) + ylim(0, 2)
+
+View(aday %>% filter(hour == 16) %>% select(local_start, span, value, type, interval, intensity, intensity_raw, workoutActivityType))
+
+View(aday %>% filter(hour == 12) %>% select(local_start, span, value, type, interval, intensity, intensity_raw, workoutActivityType))
+```
+
+More detail on intra-day
+```{r}
+aday <- intra4 %>% 
+  filter(local_date == ymd("2020-02-09"))
+```
 

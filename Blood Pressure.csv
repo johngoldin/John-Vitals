@@ -781,3 +781,6 @@ date,time,systolic,diastolic,pulse,source,note,adjusted_date,adjusted_time
 02/20/2019,11:00 AM,124,67,68,vitals,Dr. Toksoy,,
 09/26/2019,11:00 AM,123,70,55,vitals,Dr. Chuong,,
 10/10/2019,11:00 AM,128,77,58,vitals,Dr. Toksoy,,
+10/28/2020,11:30 AM,140,82,60,vitals,Dr. Lampert,,
+10/29/2020,1:30 PM,160,80,70,vitals,Echocardiogram,,
+12/14/2020,2:15 PM,156,76,79,vitals,Dr. Lampert,,

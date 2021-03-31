@@ -1,0 +1,125 @@
+---
+title: "For Personal Projects Presentation"
+author: "John Goldin"
+date: "3/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(tidyverse)
+library(lubridate)
+library(kableExtra)
+library(janitor)
+library(scales)
+path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/"
+path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
+
+load(paste0(path_saved_export,"save_processed_export.RData"))
+```
+
+
+```{r}
+health_df %>% tabyl(category) %>% arrange(desc(n)) %>% 
+  mutate(percent = scales::percent(percent)) %>% 
+  # janitor::adorn_totals("col") %>%  arrange(desc(Total)) %>% 
+  janitor::adorn_totals("row") %>% # do column total after arrange
+  kable(format.args = list(decimal.mark = " ", big.mark = ","),
+        align = c("lrr"),
+        # table.attr='class="myTable"',
+        caption = "Frequency by Category of Data", format = "html") %>% 
+  kable_styling()
+        # caption = "Frequency by Category of Data")
+```
+
+```{r hr_boundaries}
+hr <- health_df %>% 
+  filter(type == "RestingHeartRate")
+
+hr_versions <- unique(hr %>% filter(str_detect(sourceName, "Watch"), !is.na(sourceVersion)) %>% 
+                     select(sourceVersion)) %>% 
+                     separate(sourceVersion, into = c("major", "minor", "subminor"), remove = FALSE) %>% 
+  mutate(subminor = ifelse(is.na(subminor), "0", subminor)) %>% 
+  arrange(sourceVersion)
+
+hr_boundaries <- hr %>% 
+  left_join(hr_versions, by = "sourceVersion") %>% 
+  arrange(sourceVersion, local_start, creationDate) %>% 
+  group_by(sourceVersion, major, minor, subminor) %>% 
+  summarise(first_date = first(local_start), last_date = last(local_start))
+
+hr_boundaries <- hr_boundaries %>% 
+  ungroup() %>% 
+  arrange(first_date) %>% 
+  mutate(test = lag(major),
+         test2 = lead(major),
+    level = case_when(
+    major != lag(major) ~ 3,
+    minor != lag(minor) ~ 2,
+    subminor != lag(subminor) ~ 1,
+    TRUE ~ NA_real_
+  ))
+p_noversion1 <- ggplot(data = hr, aes(x = local_date, y = value)) +
+  ylab("resting heart rate") + xlab(NULL) +
+  ggtitle("Resting Heart Rate by Day") +
+  geom_point(size = 0.5) 
+p_noversion2 <- p_noversion1 +
+  geom_smooth()
+p_version1 <- p_noversion2 +
+  geom_vline(data = hr_boundaries %>% filter(level == 3), 
+             aes(xintercept = as_date(first_date)), size = 1, colour = "seagreen3") +
+  geom_vline(data = hr_boundaries %>% filter(level == 2), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2") 
+big_change <- hr_boundaries$first_date[hr_boundaries$sourceVersion == "7.0"] %>% as_date()
+p_version2 <- p_noversion1 +
+  geom_smooth(data = hr %>% filter(local_date < big_change)) +
+  geom_smooth(data = hr %>% filter(local_date >= big_change)) 
+
+```
+
+```{r vo2max}
+vo2max <- health_df %>% 
+  filter(type == "VO2Max")
+vo_versions <- unique(vo2max %>% filter(type == "VO2Max", !is.na(sourceVersion)) %>% 
+                     select(sourceVersion)) %>% 
+                     separate(sourceVersion, into = c("major", "minor", "subminor"), remove = FALSE) %>% 
+  mutate(subminor = ifelse(is.na(subminor), "0", subminor), major = as.numeric(major),
+         minor = as.numeric(minor), subminor = as.numeric(subminor)) %>% 
+  arrange(major, minor, subminor)
+vo2max2 <- vo2max %>% 
+  left_join(vo_versions, by = "sourceVersion") %>% 
+  arrange(sourceVersion, local_start, creationDate)
+vo_boundaries <- vo2max2 %>% 
+  group_by(major, minor, subminor) %>% 
+  summarise(first_date = first(local_start), last_date = last(local_start))
+
+vo_boundaries <- vo_boundaries %>% 
+  ungroup() %>% 
+  arrange(first_date) %>% 
+  mutate(test = lag(major),
+         test2 = lead(major),
+    level = case_when(
+    (major != lag(major)) | ((major > 0) & is.na(lag(major))) ~ 3,
+    is.na(lag(major)) ~ 0,
+    minor != lag(minor) ~ 2,
+    subminor != lag(subminor) ~ 1,
+    TRUE ~ NA_real_
+  ))
+p_vo2max1 <- ggplot(data = vo2max, aes(x = local_date, y = value)) +
+  ylab("VO2 Max") + xlab(NULL) +
+  ggtitle("Estimated VO2 Max") +
+  geom_point(size = 0.5) 
+p_vo2max2 <- p_vo2max1 # no smooth
+p_vo2max3 <- p_vo2max2 +
+  geom_vline(data = vo_boundaries %>% filter(level == 3), 
+             aes(xintercept = as_date(first_date)), size = 1, colour = "goldenrod1") +
+  geom_vline(data = vo_boundaries %>% filter(level == 2), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "goldenrod3") +
+  geom_vline(data = hr_boundaries %>% filter(level == 3), 
+             aes(xintercept = as_date(first_date)), size = 1, colour = "seagreen3") +
+  geom_vline(data = hr_boundaries %>% filter(level == 2), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2") 
+
+```
