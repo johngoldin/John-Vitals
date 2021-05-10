@@ -46,3 +46,4 @@ arrivals$until_timezone[nrow(arrivals)] <- Sys.timezone() # I don't really need 
 if (arrivals$local_timezone[nrow(arrivals)] != Sys.timezone()) warning("Expected to end in Sys.timezone:",
                                                                        Sys.timezone(), " rather than ",
                                                                        arrivals$local_timezone[nrow(arrivals)])
+arrivals$utc_until <- arrivals$utc_until - 1

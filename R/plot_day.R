@@ -1,4 +1,6 @@
 
+# plot_day(health_df, ymd("2021-03-13")
+
 plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL) {
   print(hour_max)
   if (is.character(adate)) adate <- ymd(adate)
@@ -20,6 +22,8 @@ plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NUL
       geom_vline(xintercept = arrived, colour = "yellow")
   }
   p <- p + geom_point(size = 0.2) +
+    geom_point(data = adf %>% filter(!is.na(workoutActivityType)),
+               colour = "orange", size = 0.5) +
     geom_line(size = 0.1) +
     xlab("Time (Hour)") + ylab("Pulse (Apple Watch)") +
     scale_x_datetime(date_labels = "%H", breaks = date_breaks("1 hour"),

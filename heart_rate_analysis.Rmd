@@ -169,4 +169,69 @@ strenuous <- plot_day(df, c("2018-03-24", "2018-06-12", "2018-04-13", "2018-04-0
 ```{r}
 vhr <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN")
 ```
+Where xx is heart rate only:
+xx %>% filter(value >= 160) %>% select(major_version, startDate, local_start, value, workoutActivityType) %>% View()
+
+Two readings of 162 on 3/13/2021. 19:27:06 and 19:27:08
+two EKGs on 3/13 at 7:26 and 7:28, heart rate 74 and 63
+Looking at the plot_day graph, frequent readings from 16:00:00 onward
+and the 162 readings are total outliers (from abouit 78).
+From EKG looks like I was doing EKG about that time so may have been
+physically fiddling with the watch.
+
+plot_day(health_df, ymd("2021-03-13")) %>% print()
+plot_day(health_df, ymd("2020-06-21")) %>% print()
+plot_day(health_df, ymd("2020-04-15")) %>% print()
+plot_day(health_df, ymd("2020-04-17")) %>% print()
+plot_day(health_df, ymd("2020-03-26")) %>% print()
+plot_day(health_df, ymd("2019-04-01")) %>% print()
+plot_day(health_df, ymd("2018-12-18"), hour_min = 11, hour_max = 17) %>% print()
+plot_day(health_df, ymd("2018-12-16"), hour_min = 11, hour_max = 17) %>% print()
+plot_day(health_df, ymd("2018-12-18"), hour_min = 11, hour_max = 17) %>% print()
+plot_day(health_df, ymd("2020-10-25"), hour_min = 11, hour_max = 17) %>% print()
+plot_day(health_df, ymd("2020-11-14")) %>% print() # 172
+
+plot_day(health_df, ymd("2018-04-12")) %>% print()
+
+
+Can we look for outliers? 
+
+Look only at rows that are not in Worout. Remember that
+for data earlier than 90 days there is not much 
+opportunity to be an outlier. For recent data,
+workouts swamp the count.
+
+```{r}
+hr <- health_df %>% 
+  filter(str_detect(sourceName, "Watch"), type == "HeartRate", is.na(workoutActivityType))
+outliers <- hr %>% 
+  mutate(prior = lag(value) / value,
+    outlier_type = case_when(
+      (lag(value) < 0.6*value) & (lead(value) < 0.6*value) ~ "high",
+      (lead(value) > 1.4*value) | (lag(value) > 1.4*value) ~ "low",
+      TRUE ~ "none"))
+out_table_low <- outliers %>% 
+  filter(outlier_type != "high") %>% 
+  tabyl(outlier_type, major_version)
+out_table_low %>% chisq.test(tabyl_results = TRUE)
+
+
+
+
+View(outliers %>% select(local_start, local_end, prior, value,  sourceVersion, timezone, major_version))
+
+xx <- hr %>% 
+  mutate(outlier = case_when(
+    value < 40 ~ "<= 39",
+    value >= 160 ~ ">= 160",
+    value >= 150 ~ "150-159",
+    TRUE ~ "common"
+  ))
+
+xx %>% filter(value >= 160) %>% select(major_version, local_start, local_end, value, workoutActivityType) %>% View()
+
+hr %>% filter(value > 150, major_version == "7") %>% View()
+
+hr %>% filter(value > 120, Period == "Sleep") %>% View()
+```
 

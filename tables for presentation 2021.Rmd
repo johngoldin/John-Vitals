@@ -14,12 +14,36 @@ library(lubridate)
 library(kableExtra)
 library(janitor)
 library(scales)
+library(scico)       ## scico color palettes(http://www.fabiocrameri.ch/colourmaps.php) in R 
+library(ggtext)      ## add improved text rendering to ggplot2
+library(ggforce)     ## add missing functionality to ggplot2
+library(ggdist)      ## add uncertainity visualizations to ggplot2
+# library(magick)      ## load images into R
+library(patchwork)   ## combine outputs from ggplot2
+
 path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/"
 path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
+# save(vo2max, resting_hr, file = paste0(path_saved_export, "vo2max_resting_hr.RData"))
 
 load(paste0(path_saved_export,"save_processed_export.RData"))
 ```
-
+```{r setup_ggplot}
+# cribbed directly from: https://github.com/Z3tt/OutlierConf2021/blob/main/R/OutlierConf2021_ggplotWizardry_HandsOn.Rmd
+## change global theme settings (for all following plots)
+# open sans downloaded from https://fonts.google.com/specimen/Open+Sans?preview.text_type=custom
+theme_set(theme_minimal(base_size = 12, base_family = "Open Sans")) #originallh 12
+## modify plot elements globally (for all following plots)
+theme_update(
+  axis.ticks = element_line(color = "grey92"),
+  axis.ticks.length = unit(.5, "lines"),
+  panel.grid.minor = element_blank(),
+  legend.title = element_text(size = 12),
+  legend.text = element_text(color = "grey30"),
+  plot.title = element_text(size = 14, face = "bold"),  # originally 18
+  plot.subtitle = element_text(size = 10, color = "grey30"), # originally 12
+  plot.caption = element_text(size = 9, margin = margin(t = 15))
+)
+```
 
 ```{r}
 health_df %>% tabyl(category) %>% arrange(desc(n)) %>% 
@@ -35,16 +59,18 @@ health_df %>% tabyl(category) %>% arrange(desc(n)) %>%
 ```
 
 ```{r hr_boundaries}
-hr <- health_df %>% 
+resting_hr <- health_df %>% filter(sourceName == "Watch") %>% 
   filter(type == "RestingHeartRate")
 
-hr_versions <- unique(hr %>% filter(str_detect(sourceName, "Watch"), !is.na(sourceVersion)) %>% 
+dup_resting <- resting_hr %>% count(local_date) %>% filter(n > 1) %>% arrange(desc(local_date))
+
+hr_versions <- unique(resting_hr %>% filter(str_detect(sourceName, "Watch"), !is.na(sourceVersion)) %>% 
                      select(sourceVersion)) %>% 
                      separate(sourceVersion, into = c("major", "minor", "subminor"), remove = FALSE) %>% 
   mutate(subminor = ifelse(is.na(subminor), "0", subminor)) %>% 
   arrange(sourceVersion)
 
-hr_boundaries <- hr %>% 
+hr_boundaries <- resting_hr %>% 
   left_join(hr_versions, by = "sourceVersion") %>% 
   arrange(sourceVersion, local_start, creationDate) %>% 
   group_by(sourceVersion, major, minor, subminor) %>% 
@@ -61,27 +87,89 @@ hr_boundaries <- hr_boundaries %>%
     subminor != lag(subminor) ~ 1,
     TRUE ~ NA_real_
   ))
-p_noversion1 <- ggplot(data = hr, aes(x = local_date, y = value)) +
-  ylab("resting heart rate") + xlab(NULL) +
-  ggtitle("Resting Heart Rate by Day") +
-  geom_point(size = 0.5) 
-p_noversion2 <- p_noversion1 +
-  geom_smooth()
-p_version1 <- p_noversion2 +
-  geom_vline(data = hr_boundaries %>% filter(level == 3), 
-             aes(xintercept = as_date(first_date)), size = 1, colour = "seagreen3") +
-  geom_vline(data = hr_boundaries %>% filter(level == 2), 
-             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2") 
-big_change <- hr_boundaries$first_date[hr_boundaries$sourceVersion == "7.0"] %>% as_date()
-p_version2 <- p_noversion1 +
-  geom_smooth(data = hr %>% filter(local_date < big_change)) +
-  geom_smooth(data = hr %>% filter(local_date >= big_change)) 
+min_date <- min(health_df$local_date[health_df$type == "RestingHeartRate"])
+max_date <- max(health_df$local_date[health_df$type == "RestingHeartRate"])
+min_resting_heart_rate <- min(health_df$value[health_df$type == "RestingHeartRate"])
+half_year_sequence <- seq(floor_date(min_date, "year"), ceiling_date(max_date, "year"), by = "quarter")
+half_year_sequence <- half_year_sequence[month(half_year_sequence) %in% c(1, 7)]
 
+p_noversion1 <- ggplot(data = hr, aes(x = local_date, y = value)) +
+  ggtitle("Resting Heart Rate by Day") +
+  geom_point(size = 0.5, alpha = .6) +
+  scale_x_date(limits = c(min_date + 0, max_date - 0), 
+               date_labels = "%b %Y",
+               breaks = half_year_sequence)  + 
+  scale_y_continuous(breaks = seq(45, 65, by = 5), 
+                     limits = c(min_resting_heart_rate, NA)) +
+  labs(
+    title = 'Resting Heart Rate by Day', 
+    subtitle = 'Data from Apple Watch via Health Export',
+    x = NULL,
+    y = 'Resting Heart Rate'
+  )
+ggsave("temp.png", p_noversion1, width = 9, height = 8, device = cairo_pdf, dpi = "retina")
+
+#  as.hexmode(col2rgb("seagreen3"))   # #43cd80
+
+p_noversion2 <- p_noversion1 +
+  geom_smooth(fill = "lightgrey")
+p_version0 <- p_noversion1 +
+  labs(subtitle = '<i style="color:#28A87D;">Vertical lines show major and minor versions of Watch OS</i>') +
+  theme(
+    plot.subtitle = ggtext::element_markdown())
+p_version1 <- p_version0 +
+  geom_vline(data = hr_boundaries %>% filter(level == 3), 
+             aes(xintercept = as_date(first_date)), size = 1, colour = "seagreen3", alpha = 0.6) +
+  geom_richtext(data = hr_boundaries %>% filter(level == 3),
+            aes(label = paste0("**v", sourceVersion, "**"), x = as_date(first_date), y = Inf), 
+            colour = "seagreen3", alpha = 0.6, hjust = 0, vjust = 1, nudge_x = 5, size = 3.5) +
+  geom_vline(data = hr_boundaries %>% filter(level == 2), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2", alpha = 0.6)
+p_version2 = p_version1 + geom_smooth(fill = "lightgrey")
+big_change <- hr_boundaries$first_date[hr_boundaries$sourceVersion == "7.0"] %>% as_date()
+p_version3 <- p_version1 +
+  geom_smooth(data = resting_hr %>% filter(local_date < big_change)) +
+  geom_smooth(data = resting_hr %>% filter(local_date >= big_change)) 
+
+
+p_tod1 <- ggplot(data = hr, aes(x = local_date, y = 
+                                  as.integer(difftime(local_end, floor_date(local_end, "day"), unit = "secs")) %>% hms::hms())) +
+  geom_point(size = 0.5, alpha = 0.6) + 
+  geom_vline(data = hr_boundaries %>% filter(level == 3), 
+             aes(xintercept = as_date(first_date)), size = 1, colour = "seagreen3", alpha = 0.6) +
+  geom_richtext(data = hr_boundaries %>% filter(level == 3),
+            aes(label = paste0("**v", sourceVersion, "**"), x = as_date(first_date), y = Inf), 
+            colour = "seagreen3", alpha = 0.6, hjust = 0, vjust = 1, nudge_x = 5, size = 3.5) +
+  geom_vline(data = hr_boundaries %>% filter(level == 2), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2", alpha = 0.6) +
+  geom_vline(data = hr_boundaries %>% filter(level == 1), 
+             aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen1", alpha = 0.6, linetype = "dotted") +
+  scale_x_date(limits = c(min_date + 0, max_date - 0), 
+               date_labels = "%b %Y",
+               breaks = half_year_sequence)  + 
+  scale_y_time(labels = function(l) strftime(l, '%H:%M')) +  # thanks to https://stackoverflow.com/a/50173616/5828243
+  labs(
+    title = 'Resting Heart Rate endDate Shown as Time of Day' , 
+    subtitle = '<i style="color:#28A87D;">Vertical lines show major and minor versions of Watch OS</i>',
+    x = NULL,
+    y = 'Resting Heart Rate endDate (hours:minutes)'
+  ) +
+  theme(
+    plot.subtitle = ggtext::element_markdown(),
+    plot.title = ggtext::element_markdown())
+# use the line below to examine outliers
+# resting_hr %>%
+#   filter(sourceVersion > "7.", 
+#          as.integer(difftime(local_end, floor_date(local_end, "day"), unit = "secs")) > hms::hms(0,0,21)) %>%
+#   select(value, local_start, local_end, creationDate, sourceVersion) %>%
+#   View()
+# p_tod1 + geom_point(data = resting_hr %>% filter(sourceVersion > "7.", as.integer(difftime(local_end, floor_date(local_end, "day"), unit = "secs")) > hms::hms(0,0,23)), colour = "red", size = 0.6, alpha = 0.6)
 ```
 
 ```{r vo2max}
 vo2max <- health_df %>% 
   filter(type == "VO2Max")
+
 vo_versions <- unique(vo2max %>% filter(type == "VO2Max", !is.na(sourceVersion)) %>% 
                      select(sourceVersion)) %>% 
                      separate(sourceVersion, into = c("major", "minor", "subminor"), remove = FALSE) %>% 
@@ -123,3 +211,14 @@ p_vo2max3 <- p_vo2max2 +
              aes(xintercept = as_date(first_date)), size = 0.3, colour = "seagreen2") 
 
 ```
+
+
+WalkingHeartRateAverage  
+
+```{r}
+ggplot(data = health_df %>% 
+         filter(type == "WalkingHeartRateAverage"),
+       aes(x = local_start, y = as.integer(difftime(local_end, floor_date(local_end, "day"), unit = "secs")) %>% hms::hms())) + 
+  geom_point() + geom_smooth()
+```
+
