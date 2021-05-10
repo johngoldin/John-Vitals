@@ -131,7 +131,7 @@ month_year <- function(x) {
 At this point, data is setup. I hope. Now let's do some charts.
 
 ```{r bp_per_day}
-
+bp_ranges$type <- factor(bp_ranges$type, levels = type_levels)
 chart_meanperday <- ggplot(data = bp_group4, aes(x = when, y = value)) 
 chart_meanperday <- chart_meanperday + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
 chart_meanperday <- chart_meanperday + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
