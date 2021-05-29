@@ -111,11 +111,10 @@ system.time({
       # save(health_xml, health_df, activity_df, workout_df, clinical_df, file = paste0(path_saved_export, "exported_dataframes.RData"))'
       # load(paste0(path_saved_export, "exported_dataframes.RData"))
       if (file.exists("~/Downloads/export.zip")) file.remove("~/Downloads/export.zip")
-      print("Completed raw import.")
+      usethis::ui_info("Completed raw import, nrow(health_df): {usethis::ui_value(nrow(health_df))} ")
     } else usethis::ui_stop("unzip returned a zero length list.")
   } else usethis::ui_warn("There was no export.zip file.")
 
-  usethis::ui_info("Size of original health_df from health export: {nrow(health_df)}")
   source('setup_timezone_arrivals.R')
 
   check_count <- nrow(health_df)
@@ -286,8 +285,7 @@ system.time({
   # Save some stuff so that I can skip the slow steps above:
   save(health_xml, health_df, activity_df, workout_df, clinical_df, type_categories,
        file = paste0(path_saved_export,"save_processed_export.RData"))
-  print("Saved to save_processed_export.RData")
-  # print(load(paste0(path_saved_export, "save_processed_export.RData")))
+  usethis::ui_done("saved to {paste0(path_saved_export,'save_processed_export.RData')}")
   usethis::ui_done("maximum date: {max(health_df$utc_start, na.rm = TRUE)}")
   usethis::ui_done("{nrow(health_df)} rows in health_df. Removed {dup_count} duplicate rows.")
 }) %>% print()

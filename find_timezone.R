@@ -17,10 +17,33 @@ double_to_datetime <- function(d) {
 local_to_sys_time <- function(datetime, timezone) {
   # what it would be if saved as system timezone (which for me, is New York)
   tz(datetime) <- timezone
-  xt <- with_tz(datetime, "UTC")
+  # xt <- with_tz(datetime, "UTC")
   xt <- with_tz(xt, Sys.timezone())
   tz(xt) <- "UTC"
   xt
+}
+
+local_to_utc <- function(dt, timezone) {
+  # UTC of this local time. Note: not vectorized
+  if (is.character(dt)) dt <- as_datetime(dt)
+  tz(dt) <- timezone
+  xt <- with_tz(dt, "UTC")
+  tz(xt) <- "UTC"
+  return(xt)
+}
+
+utc_dt_to_local <- function(dt, time_zone) {
+  # Adjust a vector of datetime from time zone where data was exported
+  # to a particular time_zone that that applies to the whole vector.
+  tz(dt) <- "UTC"
+  local <- with_tz(dt, time_zone) # now adjust utc to the time zone I want
+  tz(local) <- "UTC"
+  # I mark the vector as UTC because I will be row_bind-ing vectors
+  # together and all need to have the same time zone attribute.
+  # Although the vector is marked as UTC,
+  # in the end I will treat the hour as being whatever the local
+  # time was that I experienced then.
+  return(local)
 }
 
 # For example, flight to Paris on 2014-10-08 leaves at
