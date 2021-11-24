@@ -30,6 +30,9 @@ bp_spreadsheet <- read_csv("Blood Pressure.csv", col_types = cols(
   diastolic = col_double(),
   pulse = col_double()
 ))
+usethis::ui_info("Latest blood pressure from CSV {max(bp_spreadsheet$date, na.rm = TRUE)}.")
+
+max(bp_spreadsheet$date, na.rm = TRUE)
 bp_spreadsheet <- filter(bp_spreadsheet, !is.na(date))
 bp_spreadsheet$char_when <- ifelse(is.na(bp_spreadsheet$adjusted_date), paste(bp_spreadsheet$date, bp_spreadsheet$time), paste(bp_spreadsheet$adjusted_date, bp_spreadsheet$adjusted_time))
 bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")] <- str_replace(bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")], "12:", "00:")
@@ -137,7 +140,7 @@ chart_meanperday <- chart_meanperday + geom_hline(data = bp_ranges, aes(yinterce
 chart_meanperday <- chart_meanperday + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
   ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
   xlab(NULL) + ylab(NULL) +
-  geom_smooth(data = bp_group4, span = 0.10) 
+  geom_smooth(data = bp_group4, span = 0.10, method = "loess") 
 chart_meanperday <- chart_meanperday + geom_segment(data = events, aes(x = when, xend = when, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
 chart_meanperday <- chart_meanperday + geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
   facet_wrap(~ type, ncol = 1, scales = "free_y") 
@@ -149,11 +152,12 @@ ggsave("pdfs/blood pressure plot1.pdf", plot = chart_meanperday, width = 10, hei
 ```
 
 ```{r bp_per_day_recent}
-cutoff <- max(bp_group4$when, na.rm = TRUE) - days(180)
+days_hist <- 365
+cutoff <- max(bp_group4$when, na.rm = TRUE) - days(days_hist)
 chart_meanperday_recent <- ggplot(data = bp_group4 %>% filter(when >= cutoff), aes(x = when, y = value)) 
 chart_meanperday_recent <- chart_meanperday_recent + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
 chart_meanperday_recent <- chart_meanperday_recent + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
-  ggtitle("Mean of Grouped Readings by Day (last 180 days)", subtitle = "green dots indicate in-office vitals") + 
+  ggtitle(glue::glue("Mean of Grouped Readings by Day (last {days_hist} days)"), subtitle = "green dots indicate in-office vitals") + 
   xlab(NULL) + ylab(NULL) +
   geom_smooth(data = bp_group4 %>% filter(when >= cutoff), span = 0.10) 
 chart_meanperday_recent <- chart_meanperday_recent + geom_segment(data = events %>% filter(when >= cutoff), 

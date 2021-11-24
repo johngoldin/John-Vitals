@@ -1,0 +1,26 @@
+---
+title: "Fall Detection"
+output: html_notebook
+---
+
+
+
+```{r}
+# fall at local_start 2021-10-13 14:08:21
+start_period <- as_datetime("2021-10-13 14:03:21")
+end_period <- as_datetime("2021-10-13 14:13:21")
+# xx <- health_df %>% filter(creationDate >= start_period, creationDate <= end_period)
+xx <- health_df %>% filter(local_start >= start_period, type != "BasalEnergyBurned", sourceName == "Watch") %>% 
+  arrange(local_start, type)
+which(xx$type == "NumberOfTimesFallen")
+xx2 <- xx %>% 
+  mutate(period = local_end - local_start,
+  value2 = case_when(
+    unit == "mi" ~ value * 5280,
+    unit == "Cal" ~ value * 1000,
+    TRUE ~ value
+  )) 
+View(xx2 %>% select(local_start, local_end, type, value, value2, period, unit, sourceName, Version, workout_utc_start))
+```
+
+
