@@ -34,7 +34,7 @@ system.time(health_df <- XML:::xmlAttrsToDataFrame(xml["//Record"], stringsAsFac
                      endDate = as_datetime(str_sub(endDate, 1, 19)),
                      creationDate = as_datetime(str_sub(creationDate, 1, 19)),
                      value = as.numeric(value)) )
-save(health_df, file = "health records export 10-5-2019.RData")
+# save(health_df, file = "health records export 10-5-2019.RData")
 
 #make value variable numeric. Need as.character because it is a factor
 health_df$value <- as.numeric(as.character(health_df$value))

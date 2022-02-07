@@ -16,6 +16,7 @@ library(tidyverse)
 
 ```{r rely_on_health_df}
 source("R/create_bp_dataset.R")
+# creates bp_omron, qardio, bp_omron1, bp_omron2, bp_omron3
 ```
 
 ```{r read_from_csv}
@@ -32,7 +33,6 @@ bp_spreadsheet <- read_csv("Blood Pressure.csv", col_types = cols(
 ))
 usethis::ui_info("Latest blood pressure from CSV {max(bp_spreadsheet$date, na.rm = TRUE)}.")
 
-max(bp_spreadsheet$date, na.rm = TRUE)
 bp_spreadsheet <- filter(bp_spreadsheet, !is.na(date))
 bp_spreadsheet$char_when <- ifelse(is.na(bp_spreadsheet$adjusted_date), paste(bp_spreadsheet$date, bp_spreadsheet$time), paste(bp_spreadsheet$adjusted_date, bp_spreadsheet$adjusted_time))
 bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")] <- str_replace(bp_spreadsheet$char_when[str_detect(bp_spreadsheet$char_when, "12:")], "12:", "00:")
@@ -44,10 +44,15 @@ type_levels <- c("systolic", "diastolic", "pulse", "resting heart rate", "step c
 # Let's get things tidy before we do anything else.
 # gather the spreadsheet to tidy it:
 bp_manual <-  gather(bp_spreadsheet, key = type, value= value, systolic, diastolic, pulse) %>%
+  mutate(source = ifelse(source == "Vitals", "vitals", source)) |> 
   select(when, type, value, source, note) %>%
   filter((source != "exclude") | is.na(source))
 
-bp_ds <- bind_rows(bp_manual, bp_omron)
+# bp_manual <- bp_spreadsheet |> 
+#   pivot_longer(cols = c(systolic, diastolic, pulse), names_to = "type")
+
+bp_ds <- bind_rows(bp_manual |>  select(names(bp_omron)), 
+                   bp_omron)
 
 dr_young <- ymd_hms("2015-11-23 9:00:00")
 
@@ -63,10 +68,11 @@ bp1 <- bp_ds %>%
   )
 bp1$type <- factor(bp1$type, levels = type_levels)
 
-bp_group <- filter(bp1, is.na(source) | ((source != "vitals") & (source != "exclude") & (source != "wrist-odd"))) %>%
-  group_by(type, source, time_group) %>% 
-  summarise(value = mean(value), when = mean(when), n = n()) %>%
-  mutate(date = as_date(when))
+bp_group <- filter(bp1, is.na(source) | ((source != "vitals") & (source != "exclude") & (source != "wrist-odd")))  |> 
+  mutate(date = as_date(when)) |> 
+  group_by(type, source, date, time_group) |> 
+  summarise(value = mean(value), when = mean(when), n = n()) 
+  
 bp_group$type <- factor(bp_group$type, levels = type_levels)
 
 # bp_group3 is same as bp_group except if there are multiple groups in a day it only includes the first one
@@ -100,12 +106,13 @@ bp_group4 <- bp_group %>%
 #   group_by(group) %>% summarise(systolic = mean(systolic), diastolic = mean(diastolic), pulse = mean(pulse), when = mean(when))
 # bp_group2_all <- gather(bp_group_all, type, value, systolic, diastolic, pulse)
 
-bp_ranges <- data.frame(h = c(135, 85, NA), type = c("systolic", "diastolic", "pulse"))
-events_base <- tibble(when = c("11/23/2015 09:00 AM", "01/19/2016 09:45 AM", 
+bp_ranges <- data.frame(h = c(130, 80, NA), type = c("systolic", "diastolic", "pulse"))
+events_base <- tibble(when = c("11/23/2015 09:00 AM",  
                                "01/28/2016 02:00 PM", "07/07/2017 10:00 AM",
                                "01/02/2018 10:00 AM", "02/25/2019 05:30 AM",
-                               "10/25/2020 01:30 PM"), 
-                      what = c("Young", "Mohs", "Persing", "Close", "Close", "ER", "ER"),
+                               "10/25/2020 01:30 PM", "05/17/2021 11:00 AM",
+                               "10/13/2021 03:30 PM"), 
+                      what = c("Young", "Basal", "Move", "House", "ER", "afib", "PAI", "Fall"),
                       type = "systolic")
 events_base$when <- parse_datetime(events_base$when, format = "%m/%d/%Y %H:%M %p")
 events_base$y = min(bp_group$value[bp_group$type == "systolic"])
@@ -124,29 +131,52 @@ events_base$yend = events_base$y + 4
 events <- bind_rows(events, events_base)
 events$type <- factor(events$type, levels = type_levels)
 #bp_group$type <- factor(bp_group$type, levels = type_levels)
-
-
-month_year <- function(x) {
-  paste0(month(x, label = TRUE), " ", year(x))
-}
+```
+```{r by_time_group, eval = FALSE}
+# I'm not sure what this block was intended to be
+places <- bp_group |> 
+  # filter(!(source %in% c("vitals", "exclude", "wrist-odd", "wrist-wrong"))) |> 
+  group_by(type, date, time_group) |> 
+  arrange(when) %>%
+  # filter(type == "systolic") |> 
+  mutate(
+    place =  seq(1, n()),
+    decrease = first(value) - value
+  ) |> 
+  filter(place <= 4)
+xx |> 
+  group_by(type, place) |> 
+  summarise(decrease = mean(decrease, na.rm = TRUE), sd = sd(decrease), n = n())
+outliers <- xx |> filter(abs(decrease) > 25)
 ```
 
 At this point, data is setup. I hope. Now let's do some charts.
 
 ```{r bp_per_day}
+month_year <- function(x, first_month = 1) {
+  paste0(month(x, label = TRUE), "\n", ifelse(month(x) <= (first_month + 2), year(x), ""))
+}
+
 bp_ranges$type <- factor(bp_ranges$type, levels = type_levels)
-chart_meanperday <- ggplot(data = bp_group4, aes(x = when, y = value)) 
+chart_meanperday <- ggplot(data = bp_group4, aes(x = when |> as_date(), y = value)) 
 chart_meanperday <- chart_meanperday + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
-chart_meanperday <- chart_meanperday + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+chart_meanperday <- chart_meanperday + 
+  geom_point(size = 1) + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") + 
   ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
   xlab(NULL) + ylab(NULL) +
   geom_smooth(data = bp_group4, span = 0.10, method = "loess") 
-chart_meanperday <- chart_meanperday + geom_segment(data = events, aes(x = when, xend = when, y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.03, "npc")))
-chart_meanperday <- chart_meanperday + geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
-  facet_wrap(~ type, ncol = 1, scales = "free_y") 
-chart_meanperday <- chart_meanperday + scale_x_datetime(date_breaks = "4 months", date_minor_breaks = "1 months", labels = month_year)
-chart_meanperday <- chart_meanperday + theme(axis.text.x = element_text(size = 8))
-chart_meanperday <- chart_meanperday + theme(strip.text.x = element_text(size = 12, face = "bold"))
+chart_meanperday <- chart_meanperday + 
+  geom_segment(data = events, aes(x = when |> as_date(), xend = when |> as_date(), y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = events, aes(when |> as_date(), y = y - 1, label = what), size = 2.5)
+chart_meanperday <- chart_meanperday + 
+  geom_point(data = filter(bp1, source == "vitals"), colour = "Green") + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  scale_x_date(date_breaks = "4 months", date_minor_breaks = "1 months", 
+               limits = c(ymd("2015-05-05"), NA),
+                   labels = month_year) + # month_year is function I wrote
+  theme(axis.text.x = element_text(size = 8)) + 
+  theme(strip.text.x = element_text(size = 12, face = "bold"))
 
 ggsave("pdfs/blood pressure plot1.pdf", plot = chart_meanperday, width = 10, height = 7)
 ```
@@ -171,6 +201,37 @@ chart_meanperday_recent <- chart_meanperday_recent + theme(strip.text.x = elemen
 
 ggsave("pdfs/blood pressure recent.pdf", plot = chart_meanperday_recent, width = 10, height = 7)
 ```
+```{r}
+days_hist <- 365
+cutoff <- max(bp_group4$when, na.rm = TRUE) - days(days_hist)
+chart_meanperday_recent <- ggplot(data = bp_group4 %>% filter(when >= cutoff), aes(x = when, y = value)) 
+chart_meanperday_recent <- ggplot(data = bp_group4 %>% filter(when >= cutoff), 
+   aes(x = when |> as_date(), y = value)) 
+chart_meanperday_recent <- chart_meanperday_recent + 
+  geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
+chart_meanperday_recent <- chart_meanperday_recent + 
+  geom_point(size = 1) + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
+  xlab(NULL) + ylab(NULL) +
+  geom_smooth(data = bp_group4 %>% filter(when >= cutoff), 
+              span = 0.10, method = "loess") 
+chart_meanperday_recent <- chart_meanperday_recent + 
+  geom_segment(data = events %>% filter(when >= cutoff), 
+               aes(x = when |> as_date(), xend = when |> as_date(), y = y, yend = yend), colour = "red", arrow = arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = events %>% filter(when >= cutoff), 
+            aes(when |> as_date(), y = y - 1, label = what), size = 2.5)
+chart_meanperday_recent <- chart_meanperday_recent + 
+  geom_point(data = filter(bp1, source == "vitals", when >= cutoff), colour = "Green") + 
+  facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  scale_x_date(date_breaks = "2 months", date_minor_breaks = "1 months", labels = month_year) +
+  # scale_x_date(date_breaks = "4 months", date_minor_breaks = "1 months", 
+  #                  labels = month_year) + # month_year is function I wrote
+  theme(axis.text.x = element_text(size = 8)) + 
+  theme(strip.text.x = element_text(size = 12, face = "bold"))
+ggsave("pdfs/blood pressure recent.pdf", plot = chart_meanperday_recent, width = 10, height = 7)
+```
+
 
 ```{r with_n}
 bp_group3 <- bp_group3 %>% mutate(multiples = (n > 1))
@@ -199,7 +260,7 @@ if (exists("df_resting_hr") & exists("watch_step_count")) {
 
   chart_meanperday2 <- ggplot(data = bp_group4_with_hr, aes(x = when, y = value)) 
   chart_meanperday2 <- chart_meanperday2 + geom_hline(data = bp_ranges, aes(yintercept = h), colour = "yellow", size = 1)
-  chart_meanperday2 <- chart_meanperday2 + geom_point() + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
+  chart_meanperday2 <- chart_meanperday2 + geom_point(size = 1) + facet_wrap(~ type, ncol = 1, scales = "free_y") + 
     ggtitle("Mean of Grouped Readings by Day", subtitle = "green dots indicate in-office vitals") + 
     xlab(NULL) + ylab(NULL) +
     geom_smooth(data = bp_group4, span = 0.10) 
@@ -228,7 +289,7 @@ if (exists("df_resting_hr") & exists("watch_step_count")) {
 
 ```
 
-```{r bp_pule}
+```{r bp_pulse}
 bp_spread <- bp_group4 %>% spread(key = type, value = value)
 pulse_systolic <- ggplot(data = bp_spread, aes(x = pulse, y = systolic)) +
   geom_point() + 

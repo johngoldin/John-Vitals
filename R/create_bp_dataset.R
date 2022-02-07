@@ -47,6 +47,12 @@ bp_omron1 <- rename(health_bp, source = sourceName, when = datetime ) %>%
 bp_omron <- bp_omron1 %>%
   ungroup() %>% select(-date_only) %>%
   mutate(type = as.character(type), note = NA_character_) %>%
+  mutate(type = case_when(
+    type == "BloodPressureDiastolic" ~ "diastolic",
+    type == "BloodPressureSystolic" ~ "systolic",
+    type == "HeartRate" ~ "pulse",
+    TRUE ~ type
+  )) |>
   select(when, type, value, source, note)
 # at this point, omron contains type, source, value, when
 
@@ -67,7 +73,7 @@ bp_omron3 <- bp_omron1 %>%
 
 bp_omron3 %>% group_by(source, type, i) %>%
   filter(day_n > 1) %>%
-  summarise(dif = mean(dif), n = n()) %>% print(n = 1000)
+  summarise(date = first(date_only), dif = mean(dif), n = n()) %>% print(n = 1000)
 
 qardio <- rename(health_bp, source = sourceName, when = datetime ) %>%
   filter(source == "Qardio") %>%
