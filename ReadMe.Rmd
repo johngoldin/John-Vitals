@@ -1,0 +1,16 @@
+---
+title: "ReadMe.Rmd: john_vitals -- deep exploration of Apple Health data"
+output: html_notebook
+---
+
+Steps for processing the health export.
+
+1) import_health_export.R to create health_df
+
+2) create_bp_dataset.R combine pre-Health app blood pressure data 
+(and in-office vitals) with data stored
+in the Health dataset. Used by blood_pressure.Rmd
+
+3) blood_pressure.Rmd create displays of blood pressure data and combine
+with events.
+

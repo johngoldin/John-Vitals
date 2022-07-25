@@ -73,7 +73,7 @@ library(scales)
 ```
 
 
-```{r mods, echo = FALSE, message = FALSE, cache = TRUE}
+```{r mods, echo = FALSE, message = FALSE, cache = TRUE, eval = FALSE}
 xml <- xmlParse("apple_health_export/export.xml")
 df <- XML:::xmlAttrsToDataFrame(xml["//Record"])
 hr <- df %>% filter(type == "HKQuantityTypeIdentifierHeartRate")
@@ -102,6 +102,7 @@ p <- p + ylab("Number of Observations") + xlab("Month")
 
 ```{r create_plot, echo = FALSE}
 plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL, pt_size = 0.3) {
+  browse()
   adf <- adf %>%
     filter(type == "HKQuantityTypeIdentifierHeartRate", date %in% adate) %>%
     arrange(startDate)
@@ -128,7 +129,8 @@ plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NUL
 ```
 
 ```{r plot1, echo = FALSE}
-the_day <- plot_day(health_df, "2019-02-15", events = TRUE, hour_max = 10)
+
+the_day <- plot_day(health_df_2019_02_15, "2019-02-15", events = TRUE, hour_max = 10)
 the_day_detail <- plot_day(health_df, "2019-02-15", events = TRUE, hour_min = 5, hour_max = 6, pt_size = 0.7)
 # the_day2 <- ggarrange(the_day, the_day_detail, ncol = 1)
 print(the_day)

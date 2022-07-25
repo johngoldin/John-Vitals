@@ -19,7 +19,7 @@ library(scales)
 library(XML)
 ```
 
-```{r load_data, cache = TRUE, echo = FALSE}
+```{r load_data, cache = TRUE, echo = FALSE, eval = FALSE}
 # load("full_data_from_Apple_Health.RData")
 # Using example from github: https://gist.github.com/ryanpraski/ba9baee2583cfb1af88ca4ec62311a3d
 # ryanpraski/apple_health_load_analysis_R.r
@@ -62,16 +62,17 @@ distance <- df %>%
 #filter(steps, month(date) == 5, year(date) == 2016) %>% print(n=1000)
 
 ```
-```{r create_plot, echo = FALSE}
+```{r create_plot_function, echo = FALSE}
 plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NULL) {
+  browser()
   print(hour_max)
-  adf <- adf %>% filter(type %in% c("HKQuantityTypeIdentifierHeartRate", "HeartRate"), date %in% adate) %>%
-    arrange(start_date)
-  if (!is.null(hour_max)) adf <- adf %>% filter(hour(start_date) <= hour_max)
-  if (!is.null(hour_min)) adf <- adf %>% filter(hour(start_date) >= hour_min)
-  p <- ggplot(data = adf, aes(x = start_date, y = value))
+  adf <- adf %>% filter(type %in% c("HKQuantityTypeIdentifierHeartRate", "HeartRate"), local_date == adate) %>%
+    arrange(local_start)
+  if (!is.null(hour_max)) adf <- adf %>% filter(hour(local_start) <= hour_max)
+  if (!is.null(hour_min)) adf <- adf %>% filter(hour(local_start) >= hour_min)
+  p <- ggplot(data = adf, aes(x = local_start, y = value))
   if (events) {
-    base <- adf$start_date[10]
+    base <- adf$local_start[10]
     left_house <- base
     hour(left_house) <- 5
     minute(left_house) <- 55
@@ -85,7 +86,7 @@ plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NUL
     xlab("Time (Hour)") + ylab("Pulse (Apple Watch)") +
     scale_x_datetime(date_labels = "%H", breaks = date_breaks("1 hour"),
                      minor_breaks = date_breaks("10 min")) + 
-    facet_wrap(~ date, ncol = 1, scales = "free_x")
+    facet_wrap(~ local_date, ncol = 1, scales = "free_x")
 }
 ```
 
@@ -93,8 +94,9 @@ plot_day <- function(adf, adate, events = FALSE, hour_min = NULL, hour_max = NUL
 https://www.cnn.com/2019/03/16/health/apple-watch-heart-rate-arrhythmia-afib-study/index.html
 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6111985/
 
-```{r}
-p <- plot_day(health_df, c(ymd("2020-10-25")), events = TRUE, hour_min = 8, hour_max = 15)
+```{r recreate_oct_2020_plot}
+load("~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/key_days_export.RData")
+p <- plot_day(day_2020_10_25_health, c(ymd("2020-10-25")), events = TRUE, hour_min = 8, hour_max = 15)
 
 days_events <- tribble(
   ~x, ~lab, 
@@ -112,10 +114,10 @@ p <- p  + geom_segment(data = days_events, aes(x = x, xend = x, y = 154, yend = 
   geom_text(data = ynhh, aes(x = x, y = 155, label = lab), hjust = 0, color = "blue", nudge_y = 5, size = 3) +
   annotate("label", y = 130, x = as_datetime("2020-10-25 11:11:00"),
            xmin =  as_datetime("2020-10-25 10:41:00"), xmax = as_datetime("2020-10-25 11:50:00"),
-           label = "walk in Westwoods", size = 3)
-ggsave("pdfs/ER visit John Goldin 10-25-2020.pdf", width = 6.5, height = 4.5 )
+           label = "hike in the woods", size = 3)
+ggsave("pdfs/ER visit John Goldin 10-25-2020-alt.pdf", width = 6.5, height = 4.5 )
 
-ptoday <- plot_day(health_df, c(today()), events = TRUE, hour_min = 8, hour_max = 15)
+ptoday <- plot_day(day_2020_10_25_health, adate = as_date("2020-10-25"), events = TRUE, hour_min = 8, hour_max = 15)
 
 
 # health_df %>% filter(as_date(start_date) ==  ymd("2019-02-16")) %>% arrange(start_date) %>% View()

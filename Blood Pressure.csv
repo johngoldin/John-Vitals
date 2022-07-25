@@ -766,5 +766,6 @@ date,time,systolic,diastolic,pulse,source,note,adjusted_date,adjusted_time
 12/14/2020,2:15 PM,156,76,79,vitals,Dr. Lampert,,
 5/11/2021,10:00 AM,127,72,67,vitals,Dr. Toksoy,,
 6/21/2021,2:15 PM,130,82,66,vitals,Dr. Lampert,,
-10/20/2021,11:17 AM,138,86,86,Vitals,Stitches,,
-12/20/2021,10:00 AM,163,77,61,Vitals,Dr. Young,,
+10/20/2021,11:17 AM,138,86,86,vitals,Stitches,,
+12/20/2021,10:00 AM,163,77,61,vitals,Dr. Young,,
+2/8/2022,2:15 PM,120,70,91,vitals,Dr. Toksoy,1st reading 136,
