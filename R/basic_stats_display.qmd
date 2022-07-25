@@ -1,0 +1,172 @@
+---
+title: "Basic Stats Display"
+format: html
+editor: visual
+---
+
+```{r libraries}
+library(tidyverse, quietly = TRUE)
+#library(jsonlite, quietly = TRUE)
+library(lubridate, quietly = TRUE)
+library(XML, quietly = TRUE)
+library(knitr)
+library(kableExtra)
+library(PerformanceAnalytics) # to get correlation matrix
+library(janitor) # so that I an use the tabyl function
+library(scales) # to help format some tabular data
+```
+
+You can add options to executable code like this
+
+```{r load_file}
+path_saved_export <- "~/Dropbox/Programming/R_Stuff/john_vitals/Apple-Health-Data/"
+path_to_healthexport1 <- "~/Documents/R_local_repos/applehealth1/R/"
+# load(paste0(path_saved_export,"save_processed_export.RData"))
+load(paste0(path_saved_export,"recent_year.RData"))
+```
+
+```{r types}
+
+```
+
+```{r handle_camel}
+remove_camel <- function(astring) {
+  string.to.split = astring
+  gsub("([A-Z])", " \\1", string.to.split) |> stringr::str_trim()
+}
+```
+
+```{r create_type_list}
+#| echo: false
+#| eval: false
+
+xx <- health_df |> 
+  group_by(category, type) |> 
+  count() |> 
+  mutate(type_spaces = remove_camel(type)) 
+
+# sprintf('"%s", "%s", %d, "%s",', xx$category, xx$type, xx$n, xx$type_spaces) |> 
+#   write_clip()
+
+cc <- health_df |> 
+  group_by(category) |> count() |> 
+  select(-n)  
+sprintf('"%s", "%s", 000, 000, 000,', cc$category, cc$category) |> 
+    write_clip()
+
+bb <- health_df |> group_by(category) |> 
+  count() |> select(-n) |> 
+  sprintf('"%s", 000, 000, 000,') |> 
+  write_clip()
+  
+```
+```{r set_colors}
+category_colors <- tribble(
+  ~apple_category, ~category, ~R, ~G, ~B,
+ "Activity", "Energy", 255, 102, 51,
+"Heart", "Heart Rate", 234, 75, 99,
+"Activity", "Distance", 255, 102, 51,
+"Activity", "Steps", 255, 102, 51,
+"Activity", "Exercise", 255, 102, 51,
+"Mobility", "Mobility", 242, 163, 60,
+"Hearing", "Audio", 58, 128, 242,
+"Respiratory", "Respiratory", 129, 207, 250,
+"Nutrition", "Dietary", 101, 200, 102,
+"Heart", "Blood Pressure", 234, 75, 99,
+"Heart", "Heart Summary", 234, 75, 99,
+"Sleep", "Sleep", 130, 209, 206,
+"Body Measurements", "Body Metric", 179, 96, 234,
+"Heart", "VO2Max",  234, 75, 99,
+"Mindful", "Mindful", 132, 221, 218,
+"Symptoms", "Symptoms", 91, 90, 216,
+"Symptoms", "Events", 91, 90, 216,
+"Heart", "ECG", 234, 75, 99,
+"Unknown", "Unknown", 91, 90, 216) |> 
+  mutate(hex_color = rgb(R, G, B, maxColorValue = 255))
+  
+type_colors <- tribble(  
+  ~category, ~type, ~n, ~type_label,
+"Energy", "ActiveEnergyBurned", 1374245, "Active Energy Burned",
+"Energy", "BasalEnergyBurned", 519056, "Basal Energy Burned",
+"Heart Rate", "HeartRate", 720723, "Heart Rate",
+"Distance", "DistanceWalkingRunning", 507483, "Distance Walking Running",
+"Steps", "StepCount", 301220, "Step Count",
+"Exercise", "AppleExerciseTime", 125383, "Apple Exercise Time",
+"Exercise", "AppleStandTime", 60496, "Apple Stand Time",
+"Exercise", "FlightsClimbed", 49165, "Flights Climbed",
+"Exercise", "AppleStandHour", 40878, "Apple Stand Hour",
+"Exercise", "DistanceCycling", 458, "Distance Cycling",
+"Mobility", "WalkingStepLength", 24233, "Walking Step Length",
+"Mobility", "WalkingSpeed", 24221, "Walking Speed",
+"Mobility", "WalkingDoubleSupportPercentage", 18261, "Walking Double Support Percentage",
+"Mobility", "StairAscentSpeed", 9503, "Stair Ascent Speed",
+"Mobility", "StairDescentSpeed", 8583, "Stair Descent Speed",
+"Mobility", "WalkingAsymmetryPercentage", 6419, "Walking Asymmetry Percentage",
+"Mobility", "AppleWalkingSteadiness", 82, "Apple Walking Steadiness",
+"Mobility", "SixMinuteWalkTestDistance", 74, "Six Minute Walk Test Distance",
+"Audio", "EnvironmentalAudioExposure", 46764, "Environmental Audio Exposure",
+"Audio", "HeadphoneAudioExposure", 1017, "Headphone Audio Exposure",
+"Audio", "AudioExposureEvent", 4, "Audio Exposure Event",
+"Respiratory", "RespiratoryRate", 32262, "Respiratory Rate",
+"Respiratory", "OxygenSaturation", 12197, "Oxygen Saturation",
+"Dietary", "DietaryFatTotal", 5994, "Dietary Fat Total",
+"Dietary", "DietaryEnergyConsumed", 5866, "Dietary Energy Consumed",
+"Dietary", "DietaryProtein", 5527, "Dietary Protein",
+"Dietary", "DietaryFiber", 5498, "Dietary Fiber",
+"Dietary", "DietaryFatSaturated", 5481, "Dietary Fat Saturated",
+"Dietary", "DietarySodium", 5474, "Dietary Sodium",
+"Dietary", "DietarySugar", 5382, "Dietary Sugar",
+"Dietary", "DietaryCholesterol", 4099, "Dietary Cholesterol",
+"Dietary", "DietaryCaffeine", 1, "Dietary Caffeine",
+"Dietary", "DietaryCarbohydrates", 1, "Dietary Carbohydrates",
+"Blood Pressure", "BloodPressureDiastolic", 10005, "Blood Pressure Diastolic",
+"Blood Pressure", "BloodPressureSystolic", 10004, "Blood Pressure Systolic",
+"Heart Summary", "HeartRateVariabilitySDNN", 12094, "Heart Rate Variability S D N N",
+"Heart Summary", "RestingHeartRate", 1743, "Resting Heart Rate",
+"Heart Summary", "WalkingHeartRateAverage", 1657, "Walking Heart Rate Average",
+"Sleep", "SleepAnalysis", 10724, "Sleep Analysis",
+"Body Metric", "BodyMass", 1126, "Body Mass",
+"Body Metric", "Height", 2, "Height",
+"VO2Max", "VO2Max", 875, "VO2 Max",
+"Mindful", "MindfulSession", 199, "Mindful Session",
+"Symptoms", "LowHeartRateEvent", 13, "Low Heart Rate Event",
+"Symptoms", "RapidPoundingOrFlutteringHeartbeat", 7, "Rapid Pounding or Fluttering Heartbeat",
+"Symptoms", "Dizziness", 1, "Dizziness",
+"Events", "LowHeartRateEvent", 13, "Low Heart Rate Event",
+"Events", "NumberOfTimesFallen", 3, "Number of Times Fallen",
+"ECG", "ECGOtherSymptom", 2, "E C G Other Symptom",
+"Unknown", "oal", 1, "oal"
+) |> 
+  left_join(category_colors, by = "category") 
+
+
+```
+
+```{recent_year |>}
+  tabyl(source_group)
+recent_year |> 
+  tabyl(cat_type, show_na = TRUE)
+recent_year |> 
+  tabyl(category)
+non_workout_types <- recent_year |> 
+  filter(is.na(workoutActivityType)) |> 
+  tabyl(type, show_na = TRUE) |> 
+  arrange(desc(n)) |> 
+  mutate(cum_percent = cumsum(percent)) 
+non_workout_types <- 
+  bind_rows(non_workout_types,
+    data.frame(type = "Total", n = sum(non_workout_types$n), 
+    percent = 1, cum_percent = 1))
+    
+workout_types <- recent_year |> 
+  filter(!is.na(workoutActivityType)) |> 
+  tabyl(type, show_na = TRUE) |> 
+  arrange(desc(n)) |> 
+  mutate(cum_percent = cumsum(percent))
+workout_types <- 
+  bind_rows(workout_types,
+    data.frame(type = "Total", n = sum(workout_types$n), 
+    percent = 1, cum_percent = 1))
+```
+
+`r paste0("[", type_colors$type_label, ']{style="color:', type_colors$hex_color, '"} ')`
